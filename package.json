@@ -1,0 +1,29 @@
+{
+  "name": "hotel-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Hotel, restaurant & bar platform for a three-property group in Kenya (brief v1.2)",
+  "workspaces": [
+    "packages/shared",
+    "apps/api",
+    "apps/backoffice",
+    "apps/pwa",
+    "apps/sap-worker",
+    "apps/sap-sl-mock"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build -w @hotel/shared && npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:migrate": "npm run migrate -w @hotel/api",
+    "db:seed": "npm run seed -w @hotel/api",
+    "dev:api": "npm run dev -w @hotel/api",
+    "dev:backoffice": "npm run dev -w @hotel/backoffice",
+    "dev:pwa": "npm run dev -w @hotel/pwa",
+    "dev:sl-mock": "npm run dev -w @hotel/sap-sl-mock",
+    "dev:worker": "npm run dev -w @hotel/sap-worker"
+  }
+}

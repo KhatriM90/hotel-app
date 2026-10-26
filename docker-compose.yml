@@ -1,0 +1,23 @@
+# Local development infrastructure. Run the apps themselves with npm (see README).
+#   docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hotel
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 20
+  redis:
+    image: redis:7.4-alpine
+    ports: ["127.0.0.1:6379:6379"]
+  sap-sl-mock:
+    build: { context: ., target: sl-mock }
+    ports: ["127.0.0.1:50000:50000"]
+volumes:
+  pgdata:

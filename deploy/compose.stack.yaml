@@ -1,0 +1,140 @@
+# One complete YeaStay stack (dev or test). Run each with its own project name and env file:
+#   docker compose -p hotel-dev  --env-file deploy/env/dev.env  -f deploy/compose.stack.yaml up -d --build
+#   docker compose -p hotel-test --env-file deploy/env/test.env -f deploy/compose.stack.yaml up -d --build
+# Volumes and the internal network are namespaced by the project name, so the stacks never share data.
+
+x-node-service: &node-service
+  restart: unless-stopped
+  init: true
+  build: &build
+    context: ..
+    dockerfile: Dockerfile
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hotel_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: hotel
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=60", "-c", "timezone=UTC"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hotel_owner -d hotel"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  migrate:
+    <<: *node-service
+    restart: "no"
+    build: { <<: *build, target: api }
+    image: yeastay/api:${IMAGE_TAG:-local}
+    command: ["node", "dist/db/migrate.js"]
+    environment:
+      MIGRATION_DATABASE_URL: postgres://hotel_owner:${POSTGRES_PASSWORD}@postgres:5432/hotel
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  seed:
+    <<: *node-service
+    restart: "no"
+    image: yeastay/api:${IMAGE_TAG:-local}
+    profiles: ["seed"]
+    command: ["node", "dist/seed.js"]
+    environment:
+      MIGRATION_DATABASE_URL: postgres://hotel_owner:${POSTGRES_PASSWORD}@postgres:5432/hotel
+      SEED_PASSWORD: ${SEED_PASSWORD:-}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  api:
+    <<: *node-service
+    build: { <<: *build, target: api }
+    image: yeastay/api:${IMAGE_TAG:-local}
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://hotel_app:${APP_DB_PASSWORD}@postgres:5432/hotel
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      WORKER_TOKEN: ${WORKER_TOKEN:?set WORKER_TOKEN}
+      ENABLE_DEV_ENDPOINTS: ${ENABLE_DEV_ENDPOINTS:-false}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    networks:
+      default: {}
+      edge:
+        aliases: ["${STACK:?set STACK}-api"]
+
+  backoffice:
+    restart: unless-stopped
+    build: { <<: *build, target: backoffice }
+    image: yeastay/backoffice:${IMAGE_TAG:-local}
+    networks:
+      default: {}
+      edge:
+        aliases: ["${STACK}-backoffice"]
+
+  pwa:
+    restart: unless-stopped
+    build: { <<: *build, target: pwa }
+    image: yeastay/pwa:${IMAGE_TAG:-local}
+    networks:
+      default: {}
+      edge:
+        aliases: ["${STACK}-pwa"]
+
+  # Stand-in for SAP B1 Service Layer until the client's SAP test company exists.
+  sap-sl-mock:
+    <<: *node-service
+    build: { <<: *build, target: sl-mock }
+    image: yeastay/sap-sl-mock:${IMAGE_TAG:-local}
+    environment:
+      PORT: 50000
+      SL_COMPANY_DB: ${SL_COMPANY_DB:-HOTEL_TEST}
+      SL_USERNAME: ${SL_USERNAME:-manager}
+      SL_PASSWORD: ${SL_PASSWORD:-manager}
+
+  # In production this container runs at K1 HQ beside SAP, with CLOUD_API_URL
+  # pointing at https://<domain>/api. Here it runs in-stack against the mock.
+  sap-worker:
+    <<: *node-service
+    build: { <<: *build, target: worker }
+    image: yeastay/sap-worker:${IMAGE_TAG:-local}
+    environment:
+      CLOUD_API_URL: http://api:3000/api
+      WORKER_TOKEN: ${WORKER_TOKEN}
+      WORKER_ID: ${STACK}-worker-1
+      SL_BASE_URL: http://sap-sl-mock:50000/b1s/v2
+      SL_COMPANY_DB: ${SL_COMPANY_DB:-HOTEL_TEST}
+      SL_USERNAME: ${SL_USERNAME:-manager}
+      SL_PASSWORD: ${SL_PASSWORD:-manager}
+    depends_on:
+      api: { condition: service_healthy }
+      sap-sl-mock: { condition: service_healthy }
+
+networks:
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:-edge}
+
+volumes:
+  pgdata:
+  redisdata:
