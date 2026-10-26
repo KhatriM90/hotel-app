@@ -3,9 +3,8 @@
  *
  *   MIGRATION_DATABASE_URL=... SEED_PASSWORD='choose-a-dev-password' node dist/seed.js
  *
- * Creates demo users and placeholder outlets. Real outlet names, types and
- * warehouse codes for all 21 outlets are still TBC with the client
- * (brief §11, §15C); placeholders are clearly labelled.
+ * Creates demo users only. Properties, SAP branch IDs, tax codes and the
+ * client's outlets come from migrations (0002, 0007).
  */
 import { Client } from 'pg';
 import { hashPassword } from './auth/password';
@@ -26,17 +25,6 @@ export const SEED_USERS: SeedUser[] = [
   { username: 'sw.reception', displayName: 'Small World receptionist', roles: ['receptionist'], properties: ['SW'] },
   { username: 'km.reception', displayName: 'Kahama receptionist', roles: ['receptionist'], properties: ['KM'] },
   { username: 'k1.waiter', displayName: 'K1 waiter', roles: ['waiter'], properties: ['K1'] },
-];
-
-const PLACEHOLDER_OUTLETS: Array<[string, string, string, string, string, string, boolean]> = [
-  // property, code, name, type, revenue centre, issuing warehouse, sells alcohol
-  ['K1', 'K1-REST', 'K1 Restaurant (name TBC)', 'restaurant', 'REST', 'K1-KIT', false],
-  ['K1', 'K1-BAR1', 'K1 Bar 1 (name TBC)', 'bar', 'BAR', 'K1-BAR1', true],
-  ['K1', 'K1-RSVC', 'K1 Room service', 'room_service', 'RSVC', 'K1-KIT', true],
-  ['SW', 'SW-REST', 'Small World Restaurant (name TBC)', 'restaurant', 'REST', 'SW-KIT', false],
-  ['SW', 'SW-BAR1', 'Small World Bar 1 (name TBC)', 'bar', 'BAR', 'SW-BAR1', true],
-  ['KM', 'KM-REST', 'Kahama Restaurant (name TBC)', 'restaurant', 'REST', 'KM-KIT', false],
-  ['KM', 'KM-BAR1', 'Kahama Bar 1 (name TBC)', 'bar', 'BAR', 'KM-BAR1', true],
 ];
 
 export async function seed(connectionString: string, password: string): Promise<void> {
@@ -71,21 +59,6 @@ export async function seed(connectionString: string, password: string): Promise<
       }
     }
 
-    for (const [prop, code, name, type, rc, wh, alcohol] of PLACEHOLDER_OUTLETS) {
-      await client.query(
-        `INSERT INTO outlets (property_id, code, name, type, revenue_centre, issuing_warehouse_code, sells_alcohol)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (property_id, code) DO NOTHING`,
-        [propertyId.get(prop), code, name, type, rc, wh, alcohol],
-      );
-    }
-    // Placeholder SAP branch IDs for the Service Layer mock only. Real BPLIds are TBC (SAP-13, §15A);
-    // never run this seed against production.
-    await client.query(
-      `UPDATE properties p SET sap_branch_id = v.bpl
-         FROM (VALUES ('K1', 1), ('SW', 2), ('KM', 3)) AS v(code, bpl)
-        WHERE p.code = v.code AND p.sap_branch_id IS NULL`,
-    );
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -104,7 +77,7 @@ if (require.main === module) {
   }
   seed(url, password)
     .then(() => {
-      console.log(`seeded ${SEED_USERS.length} users and ${PLACEHOLDER_OUTLETS.length} placeholder outlets`);
+      console.log(`seeded ${SEED_USERS.length} users`);
       process.exit(0);
     })
     .catch((err) => {

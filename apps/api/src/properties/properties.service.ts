@@ -27,6 +27,7 @@ export interface OutletDto {
   issuingWarehouseCode: string | null;
   sellsAlcohol: boolean;
   isActive: boolean;
+  sapOutletName: string | null;
 }
 
 export interface CreateOutletInput {
@@ -46,7 +47,8 @@ const PROPERTY_COLUMNS = `
 
 const OUTLET_COLUMNS = `
   id, property_id AS "propertyId", code, name, type, revenue_centre AS "revenueCentre",
-  issuing_warehouse_code AS "issuingWarehouseCode", sells_alcohol AS "sellsAlcohol", is_active AS "isActive"`;
+  issuing_warehouse_code AS "issuingWarehouseCode", sells_alcohol AS "sellsAlcohol", is_active AS "isActive",
+  sap_outlet_name AS "sapOutletName"`;
 
 @Injectable()
 export class PropertiesService {

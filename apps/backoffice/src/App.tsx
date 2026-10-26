@@ -84,12 +84,12 @@ function Outlets({ property }: { property: Property }) {
       ) : (
         <table className="ys-table">
           <thead>
-            <tr><th>Code</th><th>Name</th><th>Type</th><th>Revenue centre</th><th>Warehouse</th><th>Alcohol</th></tr>
+            <tr><th>Code</th><th>Name</th><th>SAP outlet</th><th>Type</th><th>Revenue centre</th><th>Warehouse</th><th>Alcohol</th></tr>
           </thead>
           <tbody>
             {outlets.map((o) => (
               <tr key={o.id}>
-                <td>{o.code}</td><td>{o.name}</td><td>{o.type}</td><td>{o.revenueCentre}</td>
+                <td>{o.code}</td><td>{o.name}</td><td>{o.sapOutletName ?? '—'}</td><td>{o.type}</td><td>{o.revenueCentre}</td>
                 <td>{o.issuingWarehouseCode ?? '—'}</td><td>{o.sellsAlcohol ? 'Yes' : 'No'}</td>
               </tr>
             ))}

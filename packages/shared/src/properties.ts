@@ -1,7 +1,8 @@
 /**
  * The three properties in scope (brief v1.2 "Planning assumptions", CFG-04, §15A).
  * Codes double as the document-number prefix and SAP Dimension 1.
- * SAP branch (BPLId) and eTIMS branch ID (bhfId) are still TBC with the client.
+ * SAP branch IDs (BPLId) from the client: K1 = 1, SW = 4, KM = 3.
+ * The client has no separate eTIMS branch IDs, only the group KRA PIN.
  */
 export const PROPERTY_CODES = ['K1', 'SW', 'KM'] as const;
 export type PropertyCode = (typeof PROPERTY_CODES)[number] | (string & {});
@@ -25,6 +26,20 @@ export const PROPERTY_SEEDS: readonly PropertySeed[] = [
 export const REVENUE_CENTRES = ['ROOMS', 'REST', 'BAR', 'RSVC', 'CONF', 'LEIS', 'OTHER'] as const;
 export type RevenueCentre = (typeof REVENUE_CENTRES)[number];
 
-/** Outlet and station types (CFG-03). */
-export const OUTLET_TYPES = ['restaurant', 'bar', 'room_service', 'store', 'conference', 'leisure', 'other'] as const;
+/** Outlet and station types (CFG-03), including the non-F&B outlets in the client's SAP list. */
+export const OUTLET_TYPES = [
+  'restaurant',
+  'bar',
+  'room_service',
+  'store',
+  'conference',
+  'leisure',
+  'other',
+  'accommodation',
+  'kitchen',
+  'housekeeping',
+  'laundry',
+  'shop',
+  'spa',
+] as const;
 export type OutletType = (typeof OUTLET_TYPES)[number];

@@ -114,7 +114,7 @@ export class SapIntegrationController {
               description: 'Sample soda 300ml (test data)',
               quantity: '2',
               unitPriceInclTax: '150.00',
-              taxCode: 'TBC',
+              taxCode: 'O1', // Output VAT 16% (SAP tax group)
               warehouseCode: `${property.code}-BAR1`,
               revenueCentre: 'BAR',
             },

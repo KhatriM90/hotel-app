@@ -48,6 +48,27 @@ describe('database foundation', () => {
       ]);
     });
 
+    it('loads the client master data: KRA PIN, SAP branches, tax codes, outlets', async () => {
+      expect((await owner.query('SELECT kra_pin FROM legal_entity')).rows[0].kra_pin).toBe('P000598390N');
+      const branches = await owner.query('SELECT code, sap_branch_id FROM properties ORDER BY code');
+      expect(branches.rows).toEqual([
+        { code: 'K1', sap_branch_id: 1 },
+        { code: 'KM', sap_branch_id: 3 },
+        { code: 'SW', sap_branch_id: 4 },
+      ]);
+      const outlets = await owner.query(
+        `SELECT p.code, count(*)::int AS n FROM outlets o JOIN properties p ON p.id = o.property_id
+          WHERE o.sap_outlet_name IS NOT NULL GROUP BY p.code ORDER BY p.code`,
+      );
+      expect(outlets.rows).toEqual([
+        { code: 'K1', n: 19 },
+        { code: 'KM', n: 13 },
+        { code: 'SW', n: 11 },
+      ]);
+      const vat = await owner.query(`SELECT rate_percent, gl_account FROM tax_codes WHERE sap_code = 'O1'`);
+      expect(vat.rows[0]).toEqual({ rate_percent: '16.000000', gl_account: '20101401' });
+    });
+
     it('runtime role cannot bypass row-level security', async () => {
       const { rows } = await owner.query(`SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'hotel_app'`);
       expect(rows[0]).toEqual({ rolsuper: false, rolbypassrls: false });

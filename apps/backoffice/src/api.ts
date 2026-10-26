@@ -30,6 +30,7 @@ export interface Outlet {
   issuingWarehouseCode: string | null;
   sellsAlcohol: boolean;
   isActive: boolean;
+  sapOutletName: string | null;
 }
 
 export interface OutboxEvent {
