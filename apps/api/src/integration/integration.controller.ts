@@ -97,8 +97,8 @@ export class SapIntegrationController {
   async sampleInvoice(@CurrentProperty() property: CurrentPropertyT) {
     if (!this.config.ENABLE_DEV_ENDPOINTS) throw new NotFoundException();
     return this.db.tx(async (q) => {
-      const { rows: bars } = await q.query<{ dim2: string | null }>(
-        `SELECT sap_dimension2_code AS dim2 FROM outlets
+      const { rows: bars } = await q.query<{ dim2: string | null; wh: string | null }>(
+        `SELECT sap_dimension2_code AS dim2, issuing_warehouse_code AS wh FROM outlets
           WHERE property_id = $1 AND type = 'bar' AND is_active ORDER BY code LIMIT 1`,
         [property.id],
       );
@@ -122,6 +122,7 @@ export class SapIntegrationController {
               taxCode: 'O1', // Output VAT 16% (SAP tax group)
               revenueCentre: 'BAR',
               dimension2Code: bars[0]?.dim2 ?? null,
+              warehouseCode: bars[0]?.wh ?? undefined,
             },
           ],
         },

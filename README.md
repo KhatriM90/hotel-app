@@ -46,7 +46,7 @@ CLOUD_API_URL=http://localhost:3000/api WORKER_TOKEN=$WORKER_TOKEN \
   npm run dev:worker
 ```
 
-The seed only creates demo users; properties, SAP branch IDs, tax codes and the 43 outlets come from migrations. Seeded users (password = `SEED_PASSWORD`): `admin`, `owner`, `group.accounts` (all properties), `k1.manager`, `k1.reception`, `k1.waiter`, `sw.reception`, `km.reception`.
+The seed only creates demo users; properties, SAP branch IDs, tax codes, the 43 outlets and 51 SAP warehouses come from migrations. Seeded users (password = `SEED_PASSWORD`): `admin`, `owner`, `group.accounts` (all properties), `k1.manager`, `k1.reception`, `k1.waiter`, `sw.reception`, `km.reception`.
 
 Try the SAP flow end to end: sign in as `admin`, then
 
@@ -66,7 +66,7 @@ The worker posts it to the mock; check **SAP postings** in the back office or `G
 npm test          # all workspaces
 ```
 
-API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 78 tests covering RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
+API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 80 tests covering RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
 
 ## Dev and test stacks on EC2 (t4g.large, af-south-1)
 

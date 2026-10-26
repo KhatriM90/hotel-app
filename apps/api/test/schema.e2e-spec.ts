@@ -67,6 +67,18 @@ describe('database foundation', () => {
       ]);
       const missingDim2 = await owner.query('SELECT count(*)::int AS n FROM outlets WHERE sap_outlet_name IS NOT NULL AND sap_dimension2_code IS NULL');
       expect(missingDim2.rows[0].n).toBe(0);
+      const wh = await owner.query(
+        `SELECT p.code, count(*)::int AS n FROM warehouses w JOIN properties p ON p.id = w.property_id GROUP BY p.code ORDER BY p.code`,
+      );
+      expect(wh.rows).toEqual([
+        { code: 'K1', n: 23 },
+        { code: 'KM', n: 14 },
+        { code: 'SW', n: 14 },
+      ]);
+      const crossProperty = await pgError(
+        owner.query(`UPDATE outlets SET issuing_warehouse_code = '27' WHERE code = 'K1-COCKTAIL'`),
+      );
+      expect(crossProperty.code).toBe('23503');
       const vat = await owner.query(`SELECT rate_percent, gl_account FROM tax_codes WHERE sap_code = 'O1'`);
       expect(vat.rows[0]).toEqual({ rate_percent: '16.000000', gl_account: '20101401' });
     });

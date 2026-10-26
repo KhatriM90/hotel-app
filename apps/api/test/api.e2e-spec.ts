@@ -104,7 +104,7 @@ describe('API: auth, property scope and idempotency', () => {
       name: 'Pool bar (test)',
       type: 'bar',
       revenueCentre: 'BAR',
-      issuingWarehouseCode: 'K1-BAR2',
+      issuingWarehouseCode: '8', // PSH_COCKTAIL BAR
       sellsAlcohol: true,
     });
 
@@ -157,13 +157,13 @@ describe('API: auth, property scope and idempotency', () => {
         .post('/api/properties/K1/outlets')
         .set(auth('k1.manager'))
         .set('Idempotency-Key', key)
-        .send({ ...outlet('K1-T6'), issuingWarehouseCode: 'SW-BAR1' })
+        .send({ ...outlet('K1-T6'), issuingWarehouseCode: '27' }) // SWCC_MAIN BAR
         .expect(400);
       await request(http)
         .post('/api/properties/K1/outlets')
         .set(auth('k1.manager'))
         .set('Idempotency-Key', key)
-        .send({ ...outlet('K1-T6'), issuingWarehouseCode: 'SW-BAR1' })
+        .send({ ...outlet('K1-T6'), issuingWarehouseCode: '27' })
         .expect(400);
       // 400 from service validation inside the transaction → rolled back → no stored key
       const owner = await ownerClient();

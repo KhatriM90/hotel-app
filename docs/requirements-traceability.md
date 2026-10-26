@@ -39,7 +39,7 @@ Status key: **Done** = satisfied for what exists today · **Partial** = foundati
 | SAP-05 | Partial | Incoming payment mapping skeleton; invoice allocation not yet. |
 | SAP-11 | Partial | Persistent queue, external unique IDs, lookup before retry, validation errors surfaced, authorised replay. Daily reconciliation not yet. |
 | SAP-13 | Partial | Real BPLIds loaded: K1 = 1, SW = 4, KM = 3. Sent as `BPL_IDAssignedToInvoice`; worker refuses to post without one. Numbering series per branch not yet. |
-| SAP-14 | Partial | `outlets.issuing_warehouse_code` must start with the property code. Warehouse codes for the 43 outlets are still TBC. |
+| SAP-14 | Partial | The client's 51 SAP warehouses are loaded (`warehouses`, migration `0009`; SAP codes are numeric). Each outlet references at most one warehouse of its own property, enforced by a foreign key. 34 outlets are linked; 9 have no warehouse of their own (see below). |
 | SAP-15 | Partial | Dimension 1 = property; Dimension 2 = the outlet's short code (`outlets.sap_dimension2_code`, max 8 characters, e.g. `K1COCKTL`), set per line. The 43 codes were proposed by us and approved by Manish; they must be created in SAP with the same values. |
 | SAP-02 | Partial | Active SAP tax groups mirrored in `tax_codes` (I1, I2, I4, X1, C1, O1, O2, O4, X0) with rate and GL account. Items, units, price lists and warehouses not yet; no automatic sync yet. |
 | INT-02 | Partial | Confirmed: one eTIMS registration for the group (KRA PIN P000598390N). `legal_entity.etims_branch_id` (default `00`, confirm against the device registration) and `next_fiscal_invoice_number()`: one gapless, append-only invoice sequence shared by all properties. Submission, OSCU/VSCU integration and credit-note links not yet. |
@@ -68,8 +68,11 @@ KRA PIN `P000598390N`; SAP branches K1 Parklands = 1, Small World = 4, Kahama = 
 - **Catering levy:** posted as its own C1 (2%) line, separate from VAT (BIL-16).
 - **SAP Dimension 2:** short outlet codes (max 8 characters) as listed in `0008`.
 
+- **Output VAT 14% (O4)** is still active and stays loaded.
+
 ## Still open
 
-- Whether Output VAT 14% (O4) is still used.
-- Warehouse codes per outlet (SAP-14) and the legal entity name.
+- **Outlets with no warehouse of their own:** K1 Flavour Bar, K1 Guinness Bar, K1 Laundry, K1 Other Sales, K1 Rental; SW Complimentary, SW Massage; KM Laundry, KM Swimming Pool. Service outlets may need none, but the two K1 bars sell stock: which warehouse do they issue from?
+- **Warehouse list quirks:** SWCC_STEVES'S POOL BAR (44) is listed under branch PSH (loaded under SW). PSH has Pitcher & Butch Bar (3), Shisha Bar (12) and Staff Kitchen (7) warehouses but no matching K1 outlets.
+- The legal entity name.
 - Pitcher & Butch is set up as a restaurant that sells alcohol, and SWCC Complimentary as a non-revenue outlet. Both are guesses to confirm.

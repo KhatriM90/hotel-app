@@ -79,14 +79,20 @@ export class PropertiesService {
   }
 
   async createOutlet(property: { id: string; code: string }, input: CreateOutletInput): Promise<OutletDto> {
-    // SAP-14: warehouses follow the {P}-XXX convention and belong to the property's branch.
-    if (input.issuingWarehouseCode && !input.issuingWarehouseCode.startsWith(`${property.code}-`)) {
-      throw new BadRequestException(`issuingWarehouseCode must start with "${property.code}-" (SAP-14)`);
-    }
     if (!input.code.startsWith(`${property.code}-`)) {
       throw new BadRequestException(`Outlet code must start with "${property.code}-"`);
     }
     return this.db.tx(async (q) => {
+      // SAP-14: each outlet issues from exactly one SAP warehouse of its own property.
+      if (input.issuingWarehouseCode) {
+        const wh = await q.query('SELECT 1 FROM warehouses WHERE sap_code = $1 AND property_id = $2 AND is_active', [
+          input.issuingWarehouseCode,
+          property.id,
+        ]);
+        if (!wh.rowCount) {
+          throw new BadRequestException(`SAP warehouse ${input.issuingWarehouseCode} does not belong to ${property.code} (SAP-14)`);
+        }
+      }
       const { rows } = await q.query<OutletDto>(
         `INSERT INTO outlets (property_id, code, name, type, revenue_centre, issuing_warehouse_code, sells_alcohol)
          VALUES ($1, $2, $3, $4, $5, $6, $7)

@@ -12,7 +12,7 @@ const CreateOutletSchema = z.object({
   name: z.string().min(2).max(120),
   type: z.enum(OUTLET_TYPES),
   revenueCentre: z.enum(REVENUE_CENTRES),
-  issuingWarehouseCode: z.string().regex(/^[A-Z0-9-]{2,8}$/).nullish(),
+  issuingWarehouseCode: z.string().regex(/^[A-Za-z0-9-]{1,8}$/).nullish(), // SAP warehouse code, e.g. "8"
   sellsAlcohol: z.boolean().default(false),
 });
 
