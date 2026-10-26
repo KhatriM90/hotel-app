@@ -69,10 +69,11 @@ KRA PIN `P000598390N`; SAP branches K1 Parklands = 1, Small World = 4, Kahama = 
 - **SAP Dimension 2:** short outlet codes (max 8 characters) as listed in `0008`.
 
 - **Output VAT 14% (O4)** is still active and stays loaded.
+- **Steve's Pool Bar warehouse (44)** belongs to Small World (SWCC), despite being listed under PSH in SAP's export.
 
 ## Still open
 
-- **Outlets with no warehouse of their own:** K1 Flavour Bar, K1 Guinness Bar, K1 Laundry, K1 Other Sales, K1 Rental; SW Complimentary, SW Massage; KM Laundry, KM Swimming Pool. Service outlets may need none, but the two K1 bars sell stock: which warehouse do they issue from?
-- **Warehouse list quirks:** SWCC_STEVES'S POOL BAR (44) is listed under branch PSH (loaded under SW). PSH has Pitcher & Butch Bar (3), Shisha Bar (12) and Staff Kitchen (7) warehouses but no matching K1 outlets.
+- **Outlets with no warehouse of their own:** K1 Flavour Bar, K1 Guinness Bar, K1 Laundry, K1 Other Sales, K1 Rental; SW Complimentary, SW Massage; KM Laundry, KM Swimming Pool. Service outlets may need none, but the two K1 bars sell stock; Manish is confirming their warehouse with the customer.
+- **PSH warehouses with no K1 outlet:** Pitcher & Butch Bar (3), Shisha Bar (12) and Staff Kitchen (7). Manish is confirming with the customer.
 - The legal entity name.
 - Pitcher & Butch is set up as a restaurant that sells alcohol, and SWCC Complimentary as a non-revenue outlet. Both are guesses to confirm.
