@@ -20,6 +20,20 @@ export class NumberingService {
     );
     return rows[0].number;
   }
+
+  /**
+   * Next eTIMS invoice number. The group has one eTIMS registration, so this is
+   * one gapless sequence shared by all three properties (INT-02). Call inside
+   * the transaction that records the fiscal submission.
+   */
+  async nextFiscalInvoiceNo(propertyId: string): Promise<bigint> {
+    const actor = requestContext.get()?.user?.id ?? null;
+    const { rows } = await this.db.query<{ no: string }>('SELECT next_fiscal_invoice_number($1, $2)::text AS no', [
+      propertyId,
+      actor,
+    ]);
+    return BigInt(rows[0].no);
+  }
 }
 
 @Global()

@@ -14,14 +14,14 @@ function invoiceJob(ref: string, overrides: Partial<ClaimedJob> = {}, itemCode =
     eventType: 'AR_INVOICE',
     externalRef: ref,
     attempts: 1,
-    property: { code: 'SW', sapBranchId: 2, sapDimension1: 'SW', etimsBranchId: null },
+    property: { code: 'SW', sapBranchId: 2, sapDimension1: 'SW' },
     payload: {
       documentNumber: ref,
       cardCode: 'C-WALKIN',
       docDate: '2026-10-26',
       folioNumber: 'SW-FO-000010',
       lines: [
-        { itemCode, quantity: '2', unitPriceInclTax: '150.00', taxCode: 'TBC', warehouseCode: 'SW-BAR1', revenueCentre: 'BAR' },
+        { itemCode, quantity: '2', unitPriceInclTax: '150.00', taxCode: 'TBC', warehouseCode: 'SW-BAR1', revenueCentre: 'BAR', dimension2Code: 'SWMBAR' },
       ],
     },
     ...overrides,
@@ -76,7 +76,7 @@ describe('SAP integration worker against the Service Layer mock', () => {
       PriceAfterVAT: 150,
       WarehouseCode: 'SW-BAR1',
       CostingCode: 'SW',
-      CostingCode2: 'BAR',
+      CostingCode2: 'SWMBAR',
     });
     expect((doc.DocumentLines as Array<Record<string, unknown>>)[0]).not.toHaveProperty('TaxCode');
   });
@@ -118,7 +118,7 @@ describe('SAP integration worker against the Service Layer mock', () => {
   });
 
   it('refuses to post without a configured SAP branch (SAP-13)', async () => {
-    const job = invoiceJob('SW-INV-000007', { property: { code: 'SW', sapBranchId: null, sapDimension1: 'SW', etimsBranchId: null } });
+    const job = invoiceJob('SW-INV-000007', { property: { code: 'SW', sapBranchId: null, sapDimension1: 'SW' } });
     const result = await processJob(job, sl);
     expect(result).toMatchObject({ outcome: 'failed', retryable: false });
     expect(state.documents.Invoices).toHaveLength(0);

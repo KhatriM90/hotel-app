@@ -96,7 +96,12 @@ export class SapIntegrationController {
   @Idempotent()
   async sampleInvoice(@CurrentProperty() property: CurrentPropertyT) {
     if (!this.config.ENABLE_DEV_ENDPOINTS) throw new NotFoundException();
-    return this.db.tx(async () => {
+    return this.db.tx(async (q) => {
+      const { rows: bars } = await q.query<{ dim2: string | null }>(
+        `SELECT sap_dimension2_code AS dim2 FROM outlets
+          WHERE property_id = $1 AND type = 'bar' AND is_active ORDER BY code LIMIT 1`,
+        [property.id],
+      );
       const documentNumber = await this.numbering.next(property.id, 'INVOICE');
       return this.outbox.enqueue({
         propertyId: property.id,
@@ -115,8 +120,8 @@ export class SapIntegrationController {
               quantity: '2',
               unitPriceInclTax: '150.00',
               taxCode: 'O1', // Output VAT 16% (SAP tax group)
-              warehouseCode: `${property.code}-BAR1`,
               revenueCentre: 'BAR',
+              dimension2Code: bars[0]?.dim2 ?? null,
             },
           ],
         },

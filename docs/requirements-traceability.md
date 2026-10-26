@@ -40,8 +40,9 @@ Status key: **Done** = satisfied for what exists today · **Partial** = foundati
 | SAP-11 | Partial | Persistent queue, external unique IDs, lookup before retry, validation errors surfaced, authorised replay. Daily reconciliation not yet. |
 | SAP-13 | Partial | Real BPLIds loaded: K1 = 1, SW = 4, KM = 3. Sent as `BPL_IDAssignedToInvoice`; worker refuses to post without one. Numbering series per branch not yet. |
 | SAP-14 | Partial | `outlets.issuing_warehouse_code` must start with the property code. Warehouse codes for the 43 outlets are still TBC. |
-| SAP-15 | Partial | Dimension 1 = property, Dimension 2 = revenue centre, set per line. The client's SAP outlet names are longer than an SAP dimension code (8 characters), so the actual Dimension 2 codes per outlet still need confirming. |
+| SAP-15 | Partial | Dimension 1 = property; Dimension 2 = the outlet's short code (`outlets.sap_dimension2_code`, max 8 characters, e.g. `K1COCKTL`), set per line. The 43 codes were proposed by us and approved by Manish; they must be created in SAP with the same values. |
 | SAP-02 | Partial | Active SAP tax groups mirrored in `tax_codes` (I1, I2, I4, X1, C1, O1, O2, O4, X0) with rate and GL account. Items, units, price lists and warehouses not yet; no automatic sync yet. |
+| INT-02 | Partial | Confirmed: one eTIMS registration for the group (KRA PIN P000598390N). `legal_entity.etims_branch_id` (default `00`, confirm against the device registration) and `next_fiscal_invoice_number()`: one gapless, append-only invoice sequence shared by all properties. Submission, OSCU/VSCU integration and credit-note links not yet. |
 | SAP-20 | Done (worker) | `U_HTL_ExtRef`, `U_HTL_Property`, `U_HTL_FolioNo` sent; lookup before every attempt. UDFs must still be created in the SAP test company. `HTL_SYNCLOG` UDO not yet. |
 | OPS-02 | Partial | Retry queue, duplicate protection, per-property outbox list in back office, replay endpoint. Alerts not yet. |
 | OPS-03 | Partial | Back office is responsive with 44px touch targets and visible focus. |
@@ -54,17 +55,21 @@ Status key: **Done** = satisfied for what exists today · **Partial** = foundati
 
 ## Not yet satisfied (everything else)
 
-All of RES-*, FD-*, HK-*, MT-*, POS-*, BIL-01–03, 05, 06, 08, 10–12, 15–17, INV-*, RPT-*, SEC-05, SEC-07, SEC-08, OPS-01, OPS-05, OPS-06, INT-01–06, INT-08–10, SAP-01, SAP-03, SAP-06–10, SAP-12, SAP-16–19, AT-01–17 and SAP-AT01–03, 07–11, 13 are **not started**. In particular, **INT-02 eTIMS** has only the `properties.etims_branch_id` column.
+All of RES-*, FD-*, HK-*, MT-*, POS-*, BIL-01–03, 05, 06, 08, 10–12, 15–17, INV-*, RPT-*, SEC-05, SEC-07, SEC-08, OPS-01, OPS-05, OPS-06, INT-01, INT-03–06, INT-08–10, SAP-01, SAP-03, SAP-06–10, SAP-12, SAP-16–19, AT-01–17 and SAP-AT01–03, 07–11, 13 are **not started**. 
 
 ## Client data received (26 Oct 2026)
 
 KRA PIN `P000598390N`; SAP branches K1 Parklands = 1, Small World = 4, Kahama = 3; active SAP tax groups; 43 outlets. All loaded by migration `0007`.
 
-## Open questions from that data
+## Decisions (Manish Khatri, 26 Oct 2026)
 
-- **Outlet count.** The brief says 21 outlets (9/8/4); SAP lists 43 (19/11/13) because it includes accommodation, kitchens, housekeeping, laundry, shops, car wash, rental and leisure. All 43 are loaded; POS-19 sizing should use the real count.
-- **eTIMS branches.** The client has no separate eTIMS branch IDs, only the KRA PIN. INT-02 and the brief assume one bhfId per property. If all three trade under one eTIMS branch, fiscal invoice numbering must be one group-wide sequence rather than per property. To confirm with the accountant/KRA integrator before eTIMS work.
-- **Catering levy.** The combined VAT+levy groups (I3/O3, 18%) are inactive; C1 (2%) is active on its own. Confirm whether the levy is posted as a separate C1 line (matches BIL-16) and which sales it applies to.
-- **O4 Output VAT 14%** is active. Confirm whether anything still uses it.
-- **Dimension 2 codes, warehouse codes and the legal entity name** are still TBC.
+- **eTIMS:** one registration for the group, not one per property. Fiscal invoice numbers are one group-wide sequence (migration `0008`). This replaces the brief's per-property bhfId in INT-02 and SAP-AT11.
+- **Outlets:** the 43 SAP outlets are the billing outlets (the brief's 21 is superseded).
+- **Catering levy:** posted as its own C1 (2%) line, separate from VAT (BIL-16).
+- **SAP Dimension 2:** short outlet codes (max 8 characters) as listed in `0008`.
+
+## Still open
+
+- Whether Output VAT 14% (O4) is still used.
+- Warehouse codes per outlet (SAP-14) and the legal entity name.
 - Pitcher & Butch is set up as a restaurant that sells alcohol, and SWCC Complimentary as a non-revenue outlet. Both are guesses to confirm.

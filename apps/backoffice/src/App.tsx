@@ -61,7 +61,7 @@ function Overview({ properties }: { properties: Property[] }) {
               Code <strong>{p.code}</strong> · Business date <strong>{p.currentBusinessDate}</strong>
             </p>
             <p className="ys-muted">
-              SAP branch {p.sapBranchId ?? 'TBC'} · eTIMS branch {p.etimsBranchId ?? 'TBC'}
+              SAP branch {p.sapBranchId ?? 'TBC'}
             </p>
           </div>
         ))}
@@ -84,13 +84,13 @@ function Outlets({ property }: { property: Property }) {
       ) : (
         <table className="ys-table">
           <thead>
-            <tr><th>Code</th><th>Name</th><th>SAP outlet</th><th>Type</th><th>Revenue centre</th><th>Warehouse</th><th>Alcohol</th></tr>
+            <tr><th>Code</th><th>Name</th><th>SAP outlet</th><th>SAP dim. 2</th><th>Type</th><th>Revenue centre</th><th>Alcohol</th></tr>
           </thead>
           <tbody>
             {outlets.map((o) => (
               <tr key={o.id}>
-                <td>{o.code}</td><td>{o.name}</td><td>{o.sapOutletName ?? '—'}</td><td>{o.type}</td><td>{o.revenueCentre}</td>
-                <td>{o.issuingWarehouseCode ?? '—'}</td><td>{o.sellsAlcohol ? 'Yes' : 'No'}</td>
+                <td>{o.code}</td><td>{o.name}</td><td>{o.sapOutletName ?? '—'}</td><td>{o.sapDimension2Code ?? '—'}</td><td>{o.type}</td><td>{o.revenueCentre}</td>
+                <td>{o.sellsAlcohol ? 'Yes' : 'No'}</td>
               </tr>
             ))}
           </tbody>

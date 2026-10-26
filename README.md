@@ -66,7 +66,7 @@ The worker posts it to the mock; check **SAP postings** in the back office or `G
 npm test          # all workspaces
 ```
 
-API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 76 tests covering RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
+API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 78 tests covering RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
 
 ## Dev and test stacks on EC2 (t4g.large, af-south-1)
 
@@ -91,7 +91,7 @@ Routes per domain: `/api/*` → API, `/pwa/*` → PWA, everything else → back 
 ## How the foundation enforces the brief's rules
 
 - **Property scope (SEC-06, AT-18).** Every property-scoped table has a row-level security policy. The API connects as `hotel_app` (no superuser, no BYPASSRLS) and sets `app.property_ids`/`app.all_properties` per transaction; with neither set it sees nothing. Routes with `:propertyCode` narrow the scope to that single property.
-- **Numbering (CFG-04, BIL-09).** `next_document_number(property, type)` issues `K1-INV-000123`-style numbers from a locked counter row, inside the business transaction, so numbers are unique group-wide and gapless. Every issued number is logged in an append-only table.
+- **Numbering (CFG-04, BIL-09).** `next_document_number(property, type)` issues `K1-INV-000123`-style numbers from a locked counter row, inside the business transaction, so numbers are unique group-wide and gapless. Every issued number is logged in an append-only table. eTIMS invoice numbers are separate: the group has one eTIMS registration, so `next_fiscal_invoice_number()` is one sequence shared by all three properties.
 - **Idempotency (§9, BIL-04, AT-03).** Routes marked `@Idempotent()` need an `Idempotency-Key` header. The key row and the business change commit in one transaction; a retry replays the stored response, a concurrent duplicate waits and replays, and a different body with the same key gets 422.
 - **Never edit finalised records (§9, BIL-07).** `app_forbid_mutation()` makes ledgers append-only; `app_guard_finalised('col', ...)` freezes a row once `finalised_at` is set, except named status columns, and blocks its deletion.
 - **Decimal money (§9).** Postgres domains `money_amount numeric(18,2)`, `money_precise`, `rate`, `quantity` (NaN rejected); TypeScript `Money` refuses floats and allocates splits without losing cents.

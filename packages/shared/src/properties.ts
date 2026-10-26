@@ -2,7 +2,8 @@
  * The three properties in scope (brief v1.2 "Planning assumptions", CFG-04, §15A).
  * Codes double as the document-number prefix and SAP Dimension 1.
  * SAP branch IDs (BPLId) from the client: K1 = 1, SW = 4, KM = 3.
- * The client has no separate eTIMS branch IDs, only the group KRA PIN.
+ * eTIMS: one registration for the whole group (one KRA PIN, one branch ID),
+ * so fiscal invoice numbers are a single group-wide sequence.
  */
 export const PROPERTY_CODES = ['K1', 'SW', 'KM'] as const;
 export type PropertyCode = (typeof PROPERTY_CODES)[number] | (string & {});

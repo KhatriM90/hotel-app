@@ -18,7 +18,6 @@ export interface Property {
   timezone: string;
   currentBusinessDate: string;
   sapBranchId: number | null;
-  etimsBranchId: string | null;
 }
 
 export interface Outlet {
@@ -31,6 +30,7 @@ export interface Outlet {
   sellsAlcohol: boolean;
   isActive: boolean;
   sapOutletName: string | null;
+  sapDimension2Code: string | null;
 }
 
 export interface OutboxEvent {

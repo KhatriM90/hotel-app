@@ -65,6 +65,8 @@ describe('database foundation', () => {
         { code: 'KM', n: 13 },
         { code: 'SW', n: 11 },
       ]);
+      const missingDim2 = await owner.query('SELECT count(*)::int AS n FROM outlets WHERE sap_outlet_name IS NOT NULL AND sap_dimension2_code IS NULL');
+      expect(missingDim2.rows[0].n).toBe(0);
       const vat = await owner.query(`SELECT rate_percent, gl_account FROM tax_codes WHERE sap_code = 'O1'`);
       expect(vat.rows[0]).toEqual({ rate_percent: '16.000000', gl_account: '20101401' });
     });
@@ -197,6 +199,41 @@ describe('database foundation', () => {
         await scoped(app, [], true);
         const denied = await pgError(app.query(`UPDATE number_allocations SET seq_value = 0`));
         expect(denied.code).toBe('42501'); // runtime role has no UPDATE privilege at all
+      } finally {
+        await app.end();
+      }
+    });
+  });
+
+  describe('eTIMS fiscal numbering (INT-02, one registration for the group)', () => {
+    it('shares one gapless sequence across all three properties', async () => {
+      const app = await appClient();
+      try {
+        await scoped(app, [], true);
+        const nos: number[] = [];
+        for (const code of ['K1', 'SW', 'KM', 'K1']) {
+          const { rows } = await app.query('SELECT next_fiscal_invoice_number($1) AS n', [ids[code]]);
+          nos.push(Number(rows[0].n));
+        }
+        expect(nos).toEqual([nos[0], nos[0] + 1, nos[0] + 2, nos[0] + 3]);
+        const { rows } = await owner.query(`SELECT etims_branch_id FROM legal_entity`);
+        expect(rows[0].etims_branch_id).toBe('00');
+      } finally {
+        await app.end();
+      }
+    });
+
+    it('does not consume a number on rollback, and refuses out-of-scope properties', async () => {
+      const app = await appClient();
+      try {
+        await scoped(app, [ids.KM]);
+        await app.query('BEGIN');
+        const burned = await app.query('SELECT next_fiscal_invoice_number($1) AS n', [ids.KM]);
+        await app.query('ROLLBACK');
+        const next = await app.query('SELECT next_fiscal_invoice_number($1) AS n', [ids.KM]);
+        expect(next.rows[0].n).toBe(burned.rows[0].n);
+        const err = await pgError(app.query('SELECT next_fiscal_invoice_number($1)', [ids.K1]));
+        expect(err.code).toBe('HT003');
       } finally {
         await app.end();
       }

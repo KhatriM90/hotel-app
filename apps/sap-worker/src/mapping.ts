@@ -10,7 +10,7 @@ export interface ClaimedJob {
   externalRef: string;
   payload: Record<string, unknown>;
   attempts: number;
-  property: { code: string; sapBranchId: number | null; sapDimension1: string; etimsBranchId: string | null };
+  property: { code: string; sapBranchId: number | null; sapDimension1: string };
 }
 
 export class MappingError extends Error {
@@ -34,6 +34,8 @@ interface InvoiceLine {
   taxCode?: string;
   warehouseCode?: string;
   revenueCentre: string;
+  /** Outlet's SAP Dimension 2 code (max 8 chars); falls back to the revenue centre. */
+  dimension2Code?: string | null;
 }
 
 interface InvoicePayload {
@@ -89,7 +91,7 @@ function mapInvoice(job: ClaimedJob, entity: 'Invoices' | 'CreditNotes'): Mapped
         ...(l.taxCode && l.taxCode !== 'TBC' ? { TaxCode: l.taxCode } : {}),
         ...(l.warehouseCode ? { WarehouseCode: l.warehouseCode } : {}),
         CostingCode: job.property.sapDimension1, // Dimension 1 = property (SAP-15)
-        CostingCode2: l.revenueCentre, // Dimension 2 = outlet / revenue centre (SAP-15)
+        CostingCode2: l.dimension2Code ?? l.revenueCentre, // Dimension 2 = outlet (SAP-15)
       })),
     },
   };

@@ -28,7 +28,7 @@ export interface OutboxRow {
 }
 
 export interface ClaimedJob extends OutboxRow {
-  property: { code: string; sapBranchId: number | null; sapDimension1: string; etimsBranchId: string | null };
+  property: { code: string; sapBranchId: number | null; sapDimension1: string };
 }
 
 export type JobResult =
@@ -93,7 +93,7 @@ export class OutboxService {
           WHERE o.id = picked.id AND p.id = o.property_id
          RETURNING ${COLUMNS},
            json_build_object('code', p.code, 'sapBranchId', p.sap_branch_id,
-                             'sapDimension1', p.sap_dimension1, 'etimsBranchId', p.etims_branch_id) AS property
+                             'sapDimension1', p.sap_dimension1) AS property
          )
          SELECT * FROM updated ORDER BY "createdAt"`,
         [workerId, limit, leaseSeconds],

@@ -14,7 +14,6 @@ export interface PropertyDto {
   currentBusinessDate: string;
   sapBranchId: number | null;
   sapDimension1: string;
-  etimsBranchId: string | null;
 }
 
 export interface OutletDto {
@@ -28,6 +27,7 @@ export interface OutletDto {
   sellsAlcohol: boolean;
   isActive: boolean;
   sapOutletName: string | null;
+  sapDimension2Code: string | null;
 }
 
 export interface CreateOutletInput {
@@ -43,12 +43,12 @@ const PROPERTY_COLUMNS = `
   id, code, name, location, is_head_office AS "isHeadOffice", currency, timezone,
   to_char(business_day_cutoff, 'HH24:MI') AS "businessDayCutoff",
   current_business_date::text AS "currentBusinessDate",
-  sap_branch_id AS "sapBranchId", sap_dimension1 AS "sapDimension1", etims_branch_id AS "etimsBranchId"`;
+  sap_branch_id AS "sapBranchId", sap_dimension1 AS "sapDimension1"`;
 
 const OUTLET_COLUMNS = `
   id, property_id AS "propertyId", code, name, type, revenue_centre AS "revenueCentre",
   issuing_warehouse_code AS "issuingWarehouseCode", sells_alcohol AS "sellsAlcohol", is_active AS "isActive",
-  sap_outlet_name AS "sapOutletName"`;
+  sap_outlet_name AS "sapOutletName", sap_dimension2_code AS "sapDimension2Code"`;
 
 @Injectable()
 export class PropertiesService {
