@@ -1,0 +1,34 @@
+# Edge Caddy on the EC2 host: automatic HTTPS for the dev and test stacks.
+# Each stack joins the shared `edge` network with aliases <stack>-api, <stack>-backoffice, <stack>-pwa.
+{
+	email {$ACME_EMAIL}
+}
+
+(stack) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	handle /api/* {
+		reverse_proxy {args[0]}-api:3000
+	}
+	redir /pwa /pwa/ 308
+	handle_path /pwa/* {
+		reverse_proxy {args[0]}-pwa:80
+	}
+	handle {
+		reverse_proxy {args[0]}-backoffice:80
+	}
+}
+
+{$DEV_DOMAIN} {
+	import stack hotel-dev
+}
+
+{$TEST_DOMAIN} {
+	import stack hotel-test
+}

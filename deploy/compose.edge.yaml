@@ -1,0 +1,28 @@
+# Edge reverse proxy shared by the dev and test stacks on one EC2 host.
+#   docker compose -p hotel-edge --env-file deploy/env/edge.env -f deploy/compose.edge.yaml up -d
+name: hotel-edge
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+      DEV_DOMAIN: ${DEV_DOMAIN:?set DEV_DOMAIN}
+      TEST_DOMAIN: ${TEST_DOMAIN:?set TEST_DOMAIN}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+
+networks:
+  edge:
+    name: edge
+
+volumes:
+  caddy_data:
+  caddy_config:
