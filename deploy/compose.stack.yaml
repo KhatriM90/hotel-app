@@ -54,6 +54,7 @@ services:
   seed:
     <<: *node-service
     restart: "no"
+    build: { <<: *build, target: api }
     image: yeastay/api:${IMAGE_TAG:-local}
     profiles: ["seed"]
     command: ["node", "dist/seed.js"]
