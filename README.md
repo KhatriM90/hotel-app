@@ -2,7 +2,7 @@
 
 Hotel, restaurant and bar platform for a three-property group in Kenya: **K1 Klubhouse** (Parklands, HQ), **Small World Country Club** (Lukenya) and **Kahama Mombasa**, under one legal entity and one KRA PIN. The development brief v1.2 is the source of truth; requirement IDs below refer to it.
 
-This repository holds the **foundation** (monorepo, database schema and guards, API core, SAP integration worker with a Service Layer mock, back-office and PWA shells, Docker Compose stacks) and the first business module: **reservations, front desk and the basic guest folio** (RES-01 to RES-08, FD-01 to FD-08, BIL-01, BIL-06, BIL-09). To try it by hand, follow [docs/how-to-test-reservations.md](docs/how-to-test-reservations.md). See [docs/requirements-traceability.md](docs/requirements-traceability.md) for exactly which requirement IDs are done, partial or not started.
+This repository holds the **foundation** (monorepo, database schema and guards, API core, SAP integration worker with a Service Layer mock, back-office and PWA shells, Docker Compose stacks) and two business modules: **reservations, front desk and the basic guest folio** (RES-01 to RES-08, FD-01 to FD-08, BIL-01, BIL-06, BIL-09) and the **point of sale** for all 43 outlets (POS-01 to POS-13, POS-17 to POS-19, charge to room, house accounts, cash shifts, POS day close, offline order capture). To try them by hand, follow [docs/how-to-test-reservations.md](docs/how-to-test-reservations.md) and [docs/how-to-test-pos.md](docs/how-to-test-pos.md). See [docs/requirements-traceability.md](docs/requirements-traceability.md) for exactly which requirement IDs are done, partial or not started.
 
 ![Booking record](docs/screenshots/frontdesk-booking.png)
 
@@ -10,9 +10,9 @@ This repository holds the **foundation** (monorepo, database schema and guards, 
 
 | Path | What |
 |---|---|
-| `apps/api` | NestJS API (TypeScript, PostgreSQL, Redis/BullMQ). SQL migrations in `apps/api/migrations`. Reservations, front desk and folio in `src/frontoffice`. |
-| `apps/backoffice` | React back office and reception screens (Vite). Front desk pages in `src/frontdesk`. |
-| `apps/pwa` | PWA shell for waiter tablets and housekeeping phones (installable, offline app shell). |
+| `apps/api` | NestJS API (TypeScript, PostgreSQL, Redis/BullMQ). SQL migrations in `apps/api/migrations`. Reservations, front desk and folio in `src/frontoffice`; POS in `src/pos`. |
+| `apps/backoffice` | React back office and reception screens (Vite). Front desk pages in `src/frontdesk`; POS day close, sales, cash shifts, menus and business-day settings in `src/pos`. |
+| `apps/pwa` | PWA for waiter and bar tablets (orders, bills, payments, charge to room, offline order queue) and the kitchen/bar ticket screen; housekeeping phones to come. |
 | `apps/sap-worker` | Integration worker that runs at K1 HQ beside SAP. Pulls from the cloud over outbound HTTPS and posts via Service Layer. |
 | `apps/sap-sl-mock` | In-memory SAP B1 Service Layer (`/b1s/v2`) mock with fault injection, used until the client's SAP test company exists. |
 | `packages/shared` | Decimal `Money`, property codes, document numbering format, roles and permissions, stay lifecycle, nightly pricing, tax split and deposit/cancellation rules. |
@@ -46,7 +46,7 @@ CLOUD_API_URL=http://localhost:3000/api WORKER_TOKEN=$WORKER_TOKEN \
   npm run dev:worker
 ```
 
-Properties, SAP branch IDs, tax codes, the 43 outlets and 51 SAP warehouses come from migrations. The seed adds demo users and **test data for the front desk**: room types, rooms (13 at K1, 42 at Small World, 32 at Kahama), rack, seasonal and negotiated rates, booking policies, two companies and six guests. It is safe to run again and does not overwrite a policy someone has edited. Seeded users (password = `SEED_PASSWORD`): `admin`, `owner`, `group.accounts` (all properties), `k1.manager`, `k1.reception`, `k1.cashier`, `k1.waiter`, `sw.manager`, `sw.reception`, `km.manager`, `km.reception`.
+Properties, SAP branch IDs, tax codes, the 43 outlets and 51 SAP warehouses come from migrations. The seed adds demo users and **test data for the front desk**: room types, rooms (13 at K1, 42 at Small World, 32 at Kahama), rack, seasonal and negotiated rates, booking policies, two companies and six guests; and **test data for the POS**: a sample group menu with outlet prices, kitchen and bar stations, tables, placeholder alcohol hours, house accounts and a happy hour. It is safe to run again and does not overwrite a policy someone has edited. Seeded users (password = `SEED_PASSWORD`): `admin`, `owner`, `group.accounts` (all properties), `k1.manager`, `k1.reception`, `k1.cashier`, `k1.waiter`, `k1.bartender`, `k1.kitchen`, `sw.manager`, `sw.reception`, `sw.waiter`, `km.manager`, `km.reception`, `km.waiter`.
 
 Try the SAP flow end to end: sign in as `admin`, then
 
@@ -66,7 +66,7 @@ The worker posts it to the mock; check **SAP postings** in the back office or `G
 npm test          # all workspaces
 ```
 
-API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 131 tests across the workspaces, 88 of them API tests against the database, covering the front desk acceptance tests (AT-01, AT-05, AT-08, AT-09, AT-18), booking lifecycle, holds, amendments, deposits and fees, approvals, folio and payments, RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
+API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 176 tests across the workspaces, 117 of them API tests against the database, covering the front desk acceptance tests (AT-01, AT-05, AT-08, AT-09, AT-18), the POS acceptance tests (AT-02, AT-03, AT-07, AT-09, AT-10, AT-13, AT-14, AT-18), charge to room, cash shifts, day close, offline replay, booking lifecycle, holds, amendments, deposits and fees, approvals, folio and payments, RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
 
 ## Dev and test stacks on EC2 (t4g.large, af-south-1)
 
@@ -107,6 +107,14 @@ Routes per domain: `/api/*` → API, `/pwa/*` → PWA, everything else → back 
 - **Folio and balance (BIL-01, BIL-06).** Charges and their tax lines are append-only; a mistake is fixed by a linked reversal with a manager's approval. Payments are pending or confirmed, and only confirmed payments reduce the balance (`folio_balances`).
 - **Checkout race (§9, AT-09).** Charges, payments and checkout lock the business day, the stay and the folio in the same order, so a charge either lands before settlement or is refused.
 - **Approvals (SEC-02).** When a receptionist needs a manager, the screen asks for the manager's username and password; the API checks the manager's permission and records the approval with the change.
+
+## How the POS enforces the brief's rules
+
+- **Revenue once (§9, AT-02, AT-07).** A check is settled by payment, room charge, house account or a mix. Paid sales (and the paid share of a mixed check) go to SAP from the POS; the room share becomes itemised folio charges and goes to SAP with the folio; house-account use is never revenue.
+- **Charge to room (BIL-02, BIL-03, AT-09).** The server rechecks the stay, room-charge flag, folio and credit limit under the same lock order as checkout (property, stay, folio, then check), and needs a signature or a staff-verified name. Checkout refuses while the guest has an open check.
+- **Nothing finalised changes (§9).** Closed checks, check history, tickets and their reprints, payments, refunds, cash movements and Z reports are append-only or frozen by the database guards. Corrections are new rows with a reason and, where the brief asks, a manager's approval.
+- **Business day (CFG-01).** Every check, payment and shift is dated with its outlet's trading day from the property's cut-off (default 08:00) or the outlet's own. A manager closes each outlet day by hand; the property's day close waits for them.
+- **Offline (OPS-05).** The tablet creates check and line ids itself and queues orders with fixed idempotency keys, so a replay after reconnecting records once. Payments and room charges always need the server's answer.
 
 ## Adding a migration
 
