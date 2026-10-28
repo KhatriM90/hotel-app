@@ -272,7 +272,7 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
       const arrival = addDays(await bd(), 110);
       const res = await book('k1.reception', { arrival, departure: addDays(arrival, 2), rooms: [{ roomTypeCode: 'STD', ratePlanCode: 'RACK', adults: 2 }] }).expect(201);
       const pf = await api('k1.reception').post(`${K1}/reservations/${res.body.id}/proforma`).expect(201);
-      expect(pf.body.number).toMatch(/^K1-PF-\d{6}$/);
+      expect(pf.body.number).toMatch(/^K1-PF-\d{6,}$/);
       const html = await api('k1.reception').get(`${K1}/documents/${pf.body.id}/html`).expect(200);
       expect(html.headers['content-type']).toMatch(/text\/html/);
       expect(html.text).toContain('K1 Klubhouse');

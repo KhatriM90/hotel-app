@@ -5,12 +5,14 @@
  *
  * Creates demo users and test master data for reservations and front desk:
  * room types, rooms (K1 13, SW 42, KM 32), rate plans and prices, booking
- * policies, a corporate client, an agent and sample guests (seed-data.ts).
+ * policies, a corporate client, an agent and sample guests (seed-data.ts),
+ * and POS menus, price lists, stations, tables and house accounts (seed-pos.ts).
  * Properties, SAP branch IDs, tax codes and the client's outlets come from
  * migrations (0002, 0007).
  */
 import { Client } from 'pg';
 import { hashPassword } from './auth/password';
+import { seedPos } from './seed-pos';
 import { registrationTerms, SEED_COMPANIES, SEED_GUESTS, SEED_PROPERTIES } from './seed-data';
 
 interface SeedUser {
@@ -30,6 +32,10 @@ export const SEED_USERS: SeedUser[] = [
   { username: 'km.reception', displayName: 'Kahama receptionist', roles: ['receptionist'], properties: ['KM'] },
   { username: 'k1.waiter', displayName: 'K1 waiter', roles: ['waiter'], properties: ['K1'] },
   { username: 'k1.cashier', displayName: 'K1 cashier', roles: ['cashier'], properties: ['K1'] },
+  { username: 'k1.bartender', displayName: 'K1 bartender', roles: ['bartender'], properties: ['K1'] },
+  { username: 'k1.kitchen', displayName: 'K1 kitchen', roles: ['kitchen'], properties: ['K1'] },
+  { username: 'sw.waiter', displayName: 'Small World waiter', roles: ['waiter'], properties: ['SW'] },
+  { username: 'km.waiter', displayName: 'Kahama waiter', roles: ['waiter'], properties: ['KM'] },
   { username: 'sw.manager', displayName: 'Small World manager', roles: ['manager'], properties: ['SW'] },
   { username: 'km.manager', displayName: 'Kahama manager', roles: ['manager'], properties: ['KM'] },
 ];
@@ -67,6 +73,7 @@ export async function seed(connectionString: string, password: string): Promise<
     }
 
     await seedMasterData(client, propertyId);
+    await seedPos(client);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');

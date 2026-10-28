@@ -33,6 +33,8 @@ export interface ChargeInput {
   reference?: string | null;
   reason?: string | null;
   approvalId?: string | null;
+  /** Set when the charge is a POS check moved to the room (POS-09, BIL-12). */
+  posCheckId?: string | null;
 }
 
 export interface TenderInput {
@@ -138,12 +140,12 @@ export class FoliosService {
     const { rows } = await q.query<{ id: string }>(
       `INSERT INTO folio_charges (property_id, folio_id, stay_id, charge_code, description, outlet_id, service_date, quantity,
                                   unit_price, discount_amount, amount, net_amount, tax_amount, room_night_date, reference,
-                                  reason, approval_id, posted_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id`,
+                                  reason, approval_id, posted_by, pos_check_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id`,
       [
         c.folio.propertyId, c.folio.id, c.folio.stayId, code.code, c.description?.trim() || code.name, c.outletId ?? null,
         c.serviceDate, c.quantity, c.unitPrice, discount.toString(), split.gross, split.net, split.tax, c.roomNightDate ?? null,
-        c.reference ?? null, c.reason ?? null, c.approvalId ?? null, actor,
+        c.reference ?? null, c.reason ?? null, c.approvalId ?? null, actor, c.posCheckId ?? null,
       ],
     );
     for (const line of split.lines) {
@@ -227,9 +229,9 @@ export class FoliosService {
           q.query<{ id: string }>(
             `INSERT INTO folio_charges (property_id, folio_id, stay_id, charge_code, description, outlet_id, service_date, quantity,
                                         unit_price, discount_amount, amount, net_amount, tax_amount, reference, reversal_of,
-                                        reason, approval_id, posted_by)
+                                        reason, approval_id, posted_by, pos_check_id)
              SELECT property_id, folio_id, stay_id, charge_code, 'Reversal: ' || description, outlet_id, $2, -quantity,
-                    unit_price, -discount_amount, -amount, -net_amount, -tax_amount, reference, id, $3, $4, $5
+                    unit_price, -discount_amount, -amount, -net_amount, -tax_amount, reference, id, $3, $4, $5, pos_check_id
                FROM folio_charges WHERE id = $1
              RETURNING id`,
             [orig.id, bd, reason, approvalId, requestContext.get()?.user?.id ?? null],
@@ -254,7 +256,7 @@ export class FoliosService {
       `SELECT c.id, c.charge_code AS "chargeCode", c.description, o.code AS "outletCode", o.name AS "outletName",
               c.service_date AS "serviceDate", c.quantity::text AS quantity, c.unit_price::numeric(18,2)::text AS "unitPrice",
               c.discount_amount AS "discountAmount", c.amount, c.net_amount AS "netAmount", c.tax_amount AS "taxAmount",
-              c.room_night_date AS "roomNightDate", c.reference, c.reversal_of AS "reversalOf", c.reason,
+              c.room_night_date AS "roomNightDate", c.reference, c.reversal_of AS "reversalOf", c.reason, c.pos_check_id AS "posCheckId",
               u.display_name AS "postedBy", c.posted_at AS "postedAt",
               coalesce((SELECT json_agg(json_build_object('taxCode', t.tax_code, 'ratePercent', t.rate_percent::text,
                                                           'taxableAmount', t.taxable_amount::text, 'taxAmount', t.tax_amount::text)
