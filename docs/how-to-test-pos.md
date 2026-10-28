@@ -64,7 +64,7 @@ Tablet, sign in as `k1.waiter`. Pick **Waiter / bar POS**, then **Cocktail Bar**
 - [ ] The floor shows tables T1 to T8 and a list of open checks. Tap **T1** and enter 2 covers.
 - [ ] Search or tap categories. Add **Tusker** twice, then **Spirits → Johnnie Walker Black**: choose **Double** and mixer **Tonic** (+50). Then **Nyama choma & grill → Goat nyama choma**: ½ kg, side Ugali, note "no salt".
   - Expect: the basket lines show in light teal; the total is 350 × 2 + 900 + 1,300 = **2,900.00**, with VAT and levy shown below it.
-- [ ] Tap **Send 4 item(s)**. The lines change to "Sent".
+- [ ] Tap **Send order (4)**. The lines change to "Sent".
 - [ ] On a second tablet or window, sign in as `k1.bartender`, pick **Kitchen / bar tickets**, then **Cocktail Bar**. One ticket shows table T1, the server, the time, 2 × Tusker and 1 × Johnnie Walker Black (Double, Tonic).
 - [ ] Sign in as `k1.kitchen`, **Main kitchen**: one ticket with Goat nyama choma ½ kg, Ugali and the note "no salt". Tap **Start**, then **Ready**.
 - [ ] Back on the waiter's T1, the goat line shows **Ready** and table T1 is highlighted on the floor. Tap the line and **Served**.
@@ -87,7 +87,7 @@ On T1 as `k1.waiter`:
 ## 6. Pay immediately (POS-10, AT-02, AT-03)
 
 - [ ] On T1, **Print bill**. The bill shows items, VAT and levy, the total and "eTIMS receipt not yet issued".
-- [ ] **Pay**: M-PESA for part of the balance with reference `QPOS1TEST1`, and card for the rest. The check closes and **Print receipt** shows both tenders.
+- [ ] **PAY**: M-PESA for part of the balance with reference `QPOS1TEST1`, and card for the rest. The check closes and **Print receipt** shows both tenders.
 - [ ] Open another check and try M-PESA with the same reference `QPOS1TEST1`. It is refused as a duplicate payment.
 - [ ] **AT-02:** in the back office, **SAP postings** shows an A/R invoice and an incoming payment for that check number. The check never appears on any guest folio.
 
@@ -113,8 +113,8 @@ Use Small World, so the K1 test rooms stay free for reception testing.
 
 - [ ] Back office as `sw.reception`: book and check in a guest for tonight (see `docs/how-to-test-reservations.md`), with "Outlets may charge to this room" ticked.
 - [ ] Tablet as `sw.waiter`, outlet **Main Kitchen** (SW-KITCHEN). Open a table and add Chicken curry (1,250), Klub beef burger (1,100) and Café latte (320). Total **2,670.00**.
-- [ ] **Pay** 1,000 by M-PESA.
-- [ ] **Charge to room**: search by room number or surname. The guest shows as eligible with their available credit; no identity number is shown.
+- [ ] **PAY** 1,000 by M-PESA.
+- [ ] **Room**: search by room number or surname. The guest shows as eligible with their available credit; no identity number is shown.
 - [ ] Ask the "guest" to sign on the screen (or choose "staff verified" and type the name). Confirm.
   - Expect: the check closes with a room-charge reference. The guest's folio has three new itemised lines, each marked "(balance)", totalling **1,670.00**, with the check number as reference.
 - [ ] **AT-07:** **SAP postings** shows an A/R invoice for the M-PESA part only (1,000, lines marked "(paid part)"). The room part is invoiced with the folio at checkout, so no shilling is invoiced twice.
@@ -123,19 +123,24 @@ Use Small World, so the K1 test rooms stay free for reception testing.
 ## 10. Checkout with an open check (BIL-11, AT-09)
 
 - [ ] Back office as `sw.manager`, **Business day and POS**: edit Main Kitchen and tick **Room service**.
-- [ ] Tablet as `sw.waiter`, Main Kitchen: tap **Room service**, pick the in-house guest from above, add an item and **Send**. Do not settle it.
+- [ ] Tablet as `sw.waiter`, Main Kitchen: tap **Room service**, pick the in-house guest from above, add an item and **Send order**. Do not settle it.
 - [ ] As `sw.reception`, try to check the guest out. Refused: "open POS checks" with the check number. Settle the check (pay or charge to room), then checkout works.
 
 ## 11. House accounts (POS-18)
 
-- [ ] As `k1.waiter`, open a counter check at Klub Koffee, add 2 × Kenyan chai and choose **House account → STAFF-MEALS**. A manager must approve.
+- [ ] As `k1.waiter`, open a counter check at Klub Koffee, add 2 × Kenyan chai and choose **Split, merge and more → House account → STAFF-MEALS**. A manager must approve.
 - [ ] The check closes as "house account". In the back office **POS sales** lists it under house accounts, not under revenue. No SAP sale is queued for it.
 
 ## 12. Split, move and merge (POS-05, POS-08)
 
-- [ ] On a table with 3 × Tusker, **Split**: move 1 Tusker to a new check. Both checks add up to the original.
-- [ ] **Move** the new check to another table.
-- [ ] **Merge** it back into the first check. The total is unchanged.
+- [ ] On a table with 3 × Tusker, **Split, merge and more → Split bill**: move 1 Tusker to a new check. Both checks add up to the original.
+- [ ] **Move table** for the new check to another table.
+- [ ] **Merge bills** to put it back into the first check. The total is unchanged.
+
+## 12a. Split evenly (POS-08)
+
+- [ ] On a table with a total of 1,550, open **Split, merge and more → Split evenly**. Enter 3 people and choose M-PESA. The payment dialog opens with **516.66** and M-PESA selected. Take it with a reference.
+- [ ] For the second person, **Split evenly** again with 2 people still to pay and Card: 516.67. The last person taps **PAY** for the rest, 516.67, so nothing is lost to rounding.
 
 ## 13. Out of stock and alcohol hours (POS-12, POS-17)
 
@@ -148,7 +153,7 @@ Use Small World, so the K1 test rooms stay free for reception testing.
 
 - [ ] Tablet as `k1.waiter` at Cocktail Bar. In the browser's developer tools set the network to **Offline** (or turn off Wi-Fi).
 - [ ] The status bar turns red: "Offline: orders are saved on this tablet and sent later. Payments and room charges wait."
-- [ ] Open a table, add items and **Send**. The order is kept on the tablet and the check shows it as "(waiting)"; the floor shows how many actions are waiting to be sent. **Pay**, **Charge to room** and **Print bill** are disabled.
+- [ ] Open a table, add items and **Send order**. The order is kept on the tablet and the check shows it as "(waiting)"; the floor shows how many actions are waiting to be sent. **PAY**, **Room** and **Print bill** are disabled.
 - [ ] Go back online. Within a few seconds the queued order syncs once: the bar receives exactly one ticket, and the check has the same number of lines as on the tablet.
 
 ## 15. Property isolation (AT-18)
