@@ -14,9 +14,9 @@ export class MaintenanceProcessor extends WorkerHost {
     super();
   }
 
-  async process(): Promise<{ releasedClaims: number; purgedKeys: number }> {
+  async process(): Promise<{ releasedClaims: number; purgedKeys: number; expiredHolds: number }> {
     const result = await this.maintenance.tick();
-    if (result.releasedClaims || result.purgedKeys) this.logger.log(JSON.stringify(result));
+    if (result.releasedClaims || result.purgedKeys || result.expiredHolds) this.logger.log(JSON.stringify(result));
     return result;
   }
 }

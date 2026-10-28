@@ -1,12 +1,16 @@
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { Pool, PoolClient, QueryResult, QueryResultRow, types } from 'pg';
 import { APP_CONFIG, AppConfig } from '../config';
 import { NO_SCOPE, PropertyScope, requestContext } from './request-context';
 
 export interface Queryable {
   query<R extends QueryResultRow = QueryResultRow>(text: string, values?: unknown[]): Promise<QueryResult<R>>;
 }
+
+// Business dates are calendar dates with no time zone (§9): keep Postgres `date`
+// values as 'YYYY-MM-DD' strings instead of converting them to JS Dates at local midnight.
+types.setTypeParser(types.builtins.DATE, (value: string) => value);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

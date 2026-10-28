@@ -6,6 +6,7 @@ import { AppExceptionFilter } from './common/pg-exception.filter';
 import { RequestContextMiddleware } from './common/request-context.middleware';
 import { APP_CONFIG, AppConfig } from './config';
 import { DbModule } from './db/db.module';
+import { FrontOfficeModule } from './frontoffice/frontoffice.module';
 import { HealthModule } from './health/health.controller';
 import { IdempotencyInterceptor } from './idempotency/idempotency';
 import { IntegrationModule } from './integration/integration.module';
@@ -40,6 +41,7 @@ export class AppModule implements NestModule {
         HealthModule,
         PropertiesModule,
         IntegrationModule,
+        FrontOfficeModule,
         ...queues,
       ],
       providers: [
