@@ -2,20 +2,20 @@
 
 Hotel, restaurant and bar platform for a three-property group in Kenya: **K1 Klubhouse** (Parklands, HQ), **Small World Country Club** (Lukenya) and **Kahama Mombasa**, under one legal entity and one KRA PIN. The development brief v1.2 is the source of truth; requirement IDs below refer to it.
 
-This repository currently holds the **foundation**: monorepo, database schema and guards, API core, SAP integration worker with a Service Layer mock, back-office and PWA shells, and Docker Compose stacks. See [docs/requirements-traceability.md](docs/requirements-traceability.md) for exactly which requirement IDs are done, partial or not started.
+This repository holds the **foundation** (monorepo, database schema and guards, API core, SAP integration worker with a Service Layer mock, back-office and PWA shells, Docker Compose stacks) and the first business module: **reservations, front desk and the basic guest folio** (RES-01 to RES-08, FD-01 to FD-08, BIL-01, BIL-06, BIL-09). To try it by hand, follow [docs/how-to-test-reservations.md](docs/how-to-test-reservations.md). See [docs/requirements-traceability.md](docs/requirements-traceability.md) for exactly which requirement IDs are done, partial or not started.
 
-![Back office](docs/screenshots/overview.png)
+![Booking record](docs/screenshots/frontdesk-booking.png)
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `apps/api` | NestJS API (TypeScript, PostgreSQL, Redis/BullMQ). SQL migrations in `apps/api/migrations`. |
-| `apps/backoffice` | React back office / reception shell (Vite). |
+| `apps/api` | NestJS API (TypeScript, PostgreSQL, Redis/BullMQ). SQL migrations in `apps/api/migrations`. Reservations, front desk and folio in `src/frontoffice`. |
+| `apps/backoffice` | React back office and reception screens (Vite). Front desk pages in `src/frontdesk`. |
 | `apps/pwa` | PWA shell for waiter tablets and housekeeping phones (installable, offline app shell). |
 | `apps/sap-worker` | Integration worker that runs at K1 HQ beside SAP. Pulls from the cloud over outbound HTTPS and posts via Service Layer. |
 | `apps/sap-sl-mock` | In-memory SAP B1 Service Layer (`/b1s/v2`) mock with fault injection, used until the client's SAP test company exists. |
-| `packages/shared` | Decimal `Money`, property codes, document numbering format, roles and permissions. |
+| `packages/shared` | Decimal `Money`, property codes, document numbering format, roles and permissions, stay lifecycle, nightly pricing, tax split and deposit/cancellation rules. |
 | `deploy/` | Compose stacks for dev/test on EC2, edge Caddy, env templates. |
 | `docs/` | Traceability, brand pack, screenshots. |
 
@@ -46,7 +46,7 @@ CLOUD_API_URL=http://localhost:3000/api WORKER_TOKEN=$WORKER_TOKEN \
   npm run dev:worker
 ```
 
-The seed only creates demo users; properties, SAP branch IDs, tax codes, the 43 outlets and 51 SAP warehouses come from migrations. Seeded users (password = `SEED_PASSWORD`): `admin`, `owner`, `group.accounts` (all properties), `k1.manager`, `k1.reception`, `k1.waiter`, `sw.reception`, `km.reception`.
+Properties, SAP branch IDs, tax codes, the 43 outlets and 51 SAP warehouses come from migrations. The seed adds demo users and **test data for the front desk**: room types, rooms (13 at K1, 42 at Small World, 32 at Kahama), rack, seasonal and negotiated rates, booking policies, two companies and six guests. It is safe to run again and does not overwrite a policy someone has edited. Seeded users (password = `SEED_PASSWORD`): `admin`, `owner`, `group.accounts` (all properties), `k1.manager`, `k1.reception`, `k1.cashier`, `k1.waiter`, `sw.manager`, `sw.reception`, `km.manager`, `km.reception`.
 
 Try the SAP flow end to end: sign in as `admin`, then
 
@@ -66,7 +66,7 @@ The worker posts it to the mock; check **SAP postings** in the back office or `G
 npm test          # all workspaces
 ```
 
-API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 80 tests covering RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
+API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 130 tests across the workspaces, 87 of them API tests against the database, covering the front desk acceptance tests (AT-01, AT-05, AT-08, AT-09, AT-18), booking lifecycle, holds, amendments, deposits and fees, approvals, folio and payments, RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
 
 ## Dev and test stacks on EC2 (t4g.large, af-south-1)
 
@@ -96,6 +96,15 @@ Routes per domain: `/api/*` → API, `/pwa/*` → PWA, everything else → back 
 - **Never edit finalised records (§9, BIL-07).** `app_forbid_mutation()` makes ledgers append-only; `app_guard_finalised('col', ...)` freezes a row once `finalised_at` is set, except named status columns, and blocks its deletion.
 - **Decimal money (§9).** Postgres domains `money_amount numeric(18,2)`, `money_precise`, `rate`, `quantity` (NaN rejected); TypeScript `Money` refuses floats and allocates splits without losing cents.
 - **SAP exactly once (SAP-11, SAP-20, SAP-AT04).** Outbox rows are immutable, claimed with `SKIP LOCKED` and leases; the worker looks up `U_HTL_ExtRef` in SAP before every attempt and only creates the document if it is missing.
+
+## How the front desk enforces the brief's rules
+
+- **No double booking (RES-04, AT-08).** Every live room allocation (stay, hold or block) is a date range in `room_allocations`, with an exclusion constraint so two can never overlap for one room. Concurrent bookings, amendments and moves cannot beat it.
+- **Lifecycle (RES-03).** Allowed status changes are rows in `stay_status_transitions`, checked by a trigger; a closed stay is frozen.
+- **Agreed prices (RES-05, RES-06).** Each stay stores its price per night in `stay_nights`. Rate prices are append-only, so later price changes never alter a booking; an amendment reprices only new nights.
+- **Folio and balance (BIL-01, BIL-06).** Charges and their tax lines are append-only; a mistake is fixed by a linked reversal with a manager's approval. Payments are pending or confirmed, and only confirmed payments reduce the balance (`folio_balances`).
+- **Checkout race (§9, AT-09).** Charges, payments and checkout lock the business day, the stay and the folio in the same order, so a charge either lands before settlement or is refused.
+- **Approvals (SEC-02).** When a receptionist needs a manager, the screen asks for the manager's username and password; the API checks the manager's permission and records the approval with the change.
 
 ## Adding a migration
 
