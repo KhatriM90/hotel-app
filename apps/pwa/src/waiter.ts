@@ -108,6 +108,7 @@ export class WaiterApp {
   private check: Check | null = null;
   private basket: BasketLine[] = [];
   private category = 'FAV';
+  private search = '';
   private selected = new Set<string>();
   private readonly queue = new OfflineQueue();
   private online = true;
@@ -190,9 +191,10 @@ export class WaiterApp {
   // ---------------------------------------------------------------------------
   // Floor: tables, tabs and counter sales (POS-04, POS-05)
   // ---------------------------------------------------------------------------
-  async showFloor(): Promise<void> {
+  async showFloor(view: 'tables' | 'orders' = 'tables'): Promise<void> {
     this.check = null;
     this.basket = [];
+    this.search = '';
     try {
       this.checks = await api.get<CheckSummary[]>(`${this.pos}/outlets/${this.outletCode}/checks`);
     } catch (err) {
@@ -207,54 +209,48 @@ export class WaiterApp {
     for (const c of all) if (c.tableCode) byTable.set(c.tableCode, [...(byTable.get(c.tableCode) ?? []), c]);
     const others = all.filter((c) => !c.tableCode);
     const pending = this.queue.list();
+    const label = (c: CheckSummary) => (c.tableCode ? `Table ${c.tableCode}` : c.tabName ?? (c.roomNumber ? `Room ${c.roomNumber}` : c.serviceType.replace('_', ' ')));
+    const card = (c: CheckSummary) => `<li><button class="check-card ${c.readyLines ? 'ready' : ''}" data-open="${esc(c.id)}">
+        <strong>${esc(label(c))}</strong><em>KSh ${kes(c.balance)}</em>
+        <span>${esc(c.number)} · ${esc(c.waiter)}${c.offline ? ' · not sent yet' : ''}${c.unsentLines ? ` · ${c.unsentLines} not sent` : ''}${c.readyLines ? ` · <b>${c.readyLines} ready</b>` : ''}</span>
+      </button></li>`;
 
-    this.root.innerHTML = `
-      <div class="bar">
-        <button class="ghost" data-act="exit">‹ Outlets</button>
-        <h1>${esc(m.outlet.name)}</h1>
-        <span class="muted">Day starts ${esc(m.outlet.cutoff)}${m.liquorAllowedNow ? '' : ' · <strong class="warn">No alcohol now</strong>'}</span>
+    this.screen(
+      view === 'tables' ? 'tables' : 'orders',
+      `<div class="screen-head">
+        <div><h1>${esc(m.outlet.name)}</h1>
+          <p class="sub">Trading day starts ${esc(m.outlet.cutoff)}${m.liquorAllowedNow ? '' : ' · <strong class="warn">No alcohol sales now</strong>'}</p></div>
         <span class="spacer"></span>
-        <button class="ghost" data-act="shift">Cash shift</button>
-        <button class="ghost" data-act="refresh">Refresh</button>
+        <button class="ghost" data-act="refresh">↻ Refresh</button>
       </div>
       ${pending.length ? `<div class="banner">${pending.length} action(s) waiting to be sent${pending.some((p) => p.error) ? ' · some were refused' : ''}</div>` : ''}
-      <div class="floor">
-        <section>
-          <h2>Tables</h2>
+      <div class="new-checks">
+        ${m.outlet.serviceTypes.includes('counter') ? '<button class="tile-btn t-go" data-new="counter">＋ Counter sale</button>' : ''}
+        ${m.outlet.serviceTypes.includes('table') ? '<button class="tile-btn t-tab" data-new="tab">＋ Bar tab</button>' : ''}
+        ${m.outlet.serviceTypes.includes('takeaway') ? '<button class="tile-btn t-take" data-new="takeaway">＋ Takeaway</button>' : ''}
+        ${m.outlet.serviceTypes.includes('room_service') ? '<button class="tile-btn t-room" data-new="room_service">＋ Room service</button>' : ''}
+      </div>
+      ${view === 'tables'
+        ? `<h2>Tables</h2>
           <div class="tables">
             ${m.tables
               .map((t) => {
                 const open = byTable.get(t.code) ?? [];
                 return `<button class="table ${open.length ? 'busy' : ''} ${open.some((c) => c.readyLines) ? 'ready' : ''}" data-table="${esc(t.id)}" data-code="${esc(t.code)}">
-                  <strong>${esc(t.code)}</strong><span>${esc(t.area)} · ${t.seats}</span>
-                  ${open.map((c) => `<em>${kes(c.balance)}${c.offline ? ' ⏳' : ''}</em>`).join('')}
+                  <strong>${esc(t.code)}</strong>
+                  <span>${open.length ? open.map((c) => `KSh ${kes(c.balance)}${c.offline ? ' ⏳' : ''}`).join('<br>') : `${t.seats} seats · free`}</span>
+                  ${open.some((c) => c.readyLines) ? '<i>Ready</i>' : ''}
                 </button>`;
               })
               .join('') || '<p class="muted">No tables at this outlet.</p>'}
           </div>
-        </section>
-        <section>
-          <h2>Tabs and counter</h2>
-          <div class="new-checks">
-            ${m.outlet.serviceTypes.includes('counter') ? '<button class="primary" data-new="counter">New counter sale</button>' : ''}
-            ${m.outlet.serviceTypes.includes('table') ? '<button data-new="tab">New tab</button>' : ''}
-            ${m.outlet.serviceTypes.includes('takeaway') ? '<button data-new="takeaway">Takeaway</button>' : ''}
-            ${m.outlet.serviceTypes.includes('room_service') ? '<button data-new="room_service">Room service</button>' : ''}
-          </div>
-          <ul class="check-list">
-            ${others
-              .map(
-                (c) => `<li><button data-open="${esc(c.id)}"><strong>${esc(c.tabName ?? (c.roomNumber ? `Room ${c.roomNumber}` : c.serviceType.replace('_', ' ')))}</strong>
-                  <span>${esc(c.number)} · ${esc(c.waiter)}${c.offline ? ' · not sent yet' : ''}</span><em>${kes(c.balance)}</em></button></li>`,
-              )
-              .join('') || '<li class="muted">No open tabs.</li>'}
-          </ul>
-        </section>
-      </div>`;
+          <h2>Tabs, counter and room service</h2>
+          <ul class="check-list">${others.map(card).join('') || '<li class="muted">No open tabs.</li>'}</ul>`
+        : `<h2>Open orders (${all.length})</h2>
+          <ul class="check-list">${all.map(card).join('') || '<li class="muted">No open orders.</li>'}</ul>`}`,
+    );
 
-    this.root.querySelector('[data-act=exit]')!.addEventListener('click', this.onExit);
-    this.root.querySelector('[data-act=refresh]')!.addEventListener('click', () => void this.flush().then(() => this.loadMenu()).then(() => this.showFloor()).catch(showError));
-    this.root.querySelector('[data-act=shift]')!.addEventListener('click', () => void this.shiftDialog());
+    this.root.querySelector('[data-act=refresh]')!.addEventListener('click', () => void this.flush().then(() => this.loadMenu()).then(() => this.showFloor(view)).catch(showError));
     this.root.querySelectorAll<HTMLButtonElement>('[data-table]').forEach((b) =>
       b.addEventListener('click', () => {
         const open = byTable.get(b.dataset.code!) ?? [];
@@ -265,6 +261,36 @@ export class WaiterApp {
     );
     this.root.querySelectorAll<HTMLButtonElement>('[data-new]').forEach((b) => b.addEventListener('click', () => void this.newCheck(b.dataset.new!)));
     this.root.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => b.addEventListener('click', () => void this.openExisting(b.dataset.open!)));
+  }
+
+  /** Lays out a screen with the bottom navigation (tables, orders, menu, shift, outlets). */
+  private screen(active: 'tables' | 'orders' | 'menu', body: string): void {
+    const tab = (key: string, icon: string, text: string, disabled = false) =>
+      `<button data-nav="${key}" class="${active === key ? 'on' : ''}" ${disabled ? 'disabled' : ''}><span aria-hidden="true">${icon}</span>${text}</button>`;
+    this.root.innerHTML = `<div class="screen">${body}</div>
+      <nav class="bottom-nav" aria-label="POS">
+        ${tab('tables', '▦', 'Tables')}
+        ${tab('orders', '☰', 'Orders')}
+        ${tab('menu', '◫', 'Menu', !this.check)}
+        ${tab('shift', '¤', 'Cash shift')}
+        <span class="spacer"></span>
+        ${tab('exit', '⇄', 'Outlets')}
+      </nav>`;
+    this.root.querySelectorAll<HTMLButtonElement>('[data-nav]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = b.dataset.nav!;
+        if (key === active) return;
+        if (key === 'shift') return void this.shiftDialog().catch(showError);
+        if (key === 'exit') return void this.leave(() => this.onExit());
+        if (key === 'tables' || key === 'orders') return void this.leave(() => this.showFloor(key));
+      }),
+    );
+  }
+
+  /** Leaving a check with unsent items asks first. */
+  private async leave(go: () => unknown): Promise<void> {
+    if (this.check && this.basket.length && !(await confirmBox('Leave without sending?', 'The new items have not been sent and will be lost.', 'Leave', true))) return;
+    await go();
   }
 
   private async pickCheck(list: CheckSummary[]) {
@@ -348,103 +374,115 @@ export class WaiterApp {
   private renderCheck(): void {
     const c = this.check!;
     const m = this.menu!;
-    const items = groupItems(m.items);
-    const visible = items.filter((g) => (this.category === 'FAV' ? g.rows.some((r) => r.isFavourite) : g.rows[0].categoryCode === this.category));
     const queued = this.queue.pendingFor(c.id);
     const basketTotal = addMoney(...this.basket.map((b) => (Number(addMoney(b.row.price, b.modifierDelta)) * b.quantity).toFixed(2)), '0');
     const live = c.lines.filter((l) => l.status !== 'cancelled' && l.status !== 'wasted');
     const offline = !this.online || c.offline;
+    const open = c.status === 'open';
+    const where = c.tableCode ? `Table ${c.tableCode}` : c.tabName ?? c.serviceType.replace('_', ' ');
+    const kind = { table: 'Dine-in', counter: 'Counter', takeaway: 'Takeaway', room_service: 'Room service' }[c.serviceType] ?? c.serviceType;
+    const due = addMoney(c.totals.balance, basketTotal);
+    const noPay = offline || this.basket.length > 0 || !Number(c.totals.balance);
+    const cats = [{ code: 'ALL', name: 'All' }, { code: 'FAV', name: '★ Favourites' }, ...m.categories];
 
-    this.root.innerHTML = `
-      <div class="bar">
-        <button class="ghost" data-act="back">‹ Floor</button>
-        <h1>${esc(c.tableCode ? `Table ${c.tableCode}` : c.tabName ?? c.serviceType.replace('_', ' '))}</h1>
-        <span class="muted">${esc(c.number)} · ${esc(c.waiter)}${c.roomNumber ? ` · Room ${esc(c.roomNumber)} ${esc(c.guestName ?? '')}` : ''}</span>
-        <span class="spacer"></span>
-        ${c.status !== 'open' ? `<span class="chip">${esc(c.status)}</span>` : ''}
-      </div>
-      ${queued.length ? `<div class="banner">${queued.map((q) => `${esc(q.label)}${q.error ? `: <strong>refused: ${esc(q.error)}</strong> <button class="link" data-dismiss="${esc(q.id)}">dismiss</button>` : ' (waiting)'}`).join(' · ')}</div>` : ''}
-      <div class="pos">
+    this.screen(
+      'menu',
+      `<div class="pos">
         <section class="menu">
-          <nav class="cats">
-            <button class="${this.category === 'FAV' ? 'on' : ''}" data-cat="FAV">★ Favourites</button>
-            ${m.categories.map((k) => `<button class="${this.category === k.code ? 'on' : ''}" data-cat="${esc(k.code)}">${esc(k.name)}</button>`).join('')}
-          </nav>
-          <div class="items">
-            ${visible
-              .map((g) => {
-                const r = g.rows[0];
-                const off = g.rows.every((x) => !x.isAvailable);
-                const blockedAlcohol = r.isAlcohol && !m.liquorAllowedNow;
-                return `<button class="item ${off ? 'off' : ''} ${blockedAlcohol ? 'liquor' : ''}" data-item="${esc(r.itemId)}" ${c.status !== 'open' ? 'disabled' : ''}>
-                  <strong>${esc(r.name)}</strong>
-                  <span>${g.rows.length > 1 ? `${g.rows.length} sizes from ` : ''}${kes(minPrice(g.rows))}</span>
-                  ${off ? '<em>Not available</em>' : blockedAlcohol ? '<em>Outside licence hours</em>' : g.rows.some((x) => x.stockRemaining !== null) ? `<em>${Number(g.rows[0].stockRemaining)} left</em>` : ''}
-                </button>`;
-              })
-              .join('') || '<p class="muted">Nothing here.</p>'}
+          <div class="screen-head">
+            <div><h1>${esc(where)} <small>${esc(kind)}</small></h1>
+              <p class="sub">${esc(m.outlet.name)} · ${esc(c.waiter)}${c.covers > 1 ? ` · ${c.covers} guests` : ''}${c.roomNumber ? ` · Room ${esc(c.roomNumber)} ${esc(c.guestName ?? '')}` : ''}</p></div>
+            ${open ? '' : `<span class="chip">${esc(c.status)}</span>`}
           </div>
+          <label class="search"><span aria-hidden="true">⌕</span><input type="search" data-search placeholder="Search item or code…" value="${esc(this.search)}" ${open ? '' : 'disabled'}></label>
+          <nav class="cats">
+            ${cats.map((k) => `<button class="${this.category === k.code ? 'on' : ''} ${tileClass(k.code)}" data-cat="${esc(k.code)}">${esc(k.name)}</button>`).join('')}
+          </nav>
+          <div class="items" data-items>${this.itemsHtml()}</div>
         </section>
         <section class="order">
+          <header><h2>Current order</h2><span>${esc(where)} / ${esc(c.number)}</span></header>
+          ${queued.length ? `<div class="banner">${queued.map((q) => `${esc(q.label)}${q.error ? `: <strong>refused: ${esc(q.error)}</strong> <button class="link" data-dismiss="${esc(q.id)}">dismiss</button>` : ' (waiting)'}`).join(' · ')}</div>` : ''}
           <ul class="lines">
             ${live
               .map(
-                (l) => `<li class="${this.selected.has(l.id) ? 'sel' : ''}" data-line="${esc(l.id)}">
-                  <span class="q">${Number(l.quantity)}×</span>
-                  <span class="n">${esc(l.name)}${l.modifiers?.length ? `<small>${l.modifiers.map((x) => esc(x.name)).join(', ')}</small>` : ''}${l.notes ? `<small>“${esc(l.notes)}”</small>` : ''}
-                    ${Number(l.discountPercent ?? 0) ? `<small>${l.isComp ? 'Complimentary' : `${Number(l.discountPercent)}% off`}</small>` : ''}</span>
-                  <span class="s s-${esc(l.status)}">${l.queued ? 'Queued' : STATUS_LABEL[l.status] ?? esc(l.status)}</span>
-                  <span class="a">${kes(l.amount)}</span>
+                (l) => `<li class="sent ${this.selected.has(l.id) ? 'sel' : ''}" data-line="${esc(l.id)}">
+                  <span class="qty">${Number(l.quantity)}</span>
+                  <span class="n"><b>${esc(l.name)}</b>${l.modifiers?.length ? `<small>${l.modifiers.map((x) => esc(x.name)).join(', ')}</small>` : ''}${l.notes ? `<small>“${esc(l.notes)}”</small>` : ''}
+                    ${Number(l.discountPercent ?? 0) ? `<small>${l.isComp ? 'Complimentary' : `${Number(l.discountPercent)}% off`}</small>` : ''}
+                    <span class="s s-${esc(l.status)}">${l.queued ? 'Queued' : STATUS_LABEL[l.status] ?? esc(l.status)}</span></span>
+                  <span class="a">KSh ${kes(l.amount)}</span>
                 </li>`,
               )
               .join('')}
             ${this.basket
-              .map(
-                (b) => `<li class="basket">
-                  <span class="q"><button class="mini" data-dec="${b.id}">−</button>${b.quantity}<button class="mini" data-inc="${b.id}">+</button></span>
-                  <span class="n">${esc(b.row.portionName ? `${b.row.name} (${b.row.portionName})` : b.row.name)}${b.modifierNames.length ? `<small>${b.modifierNames.map(esc).join(', ')}</small>` : ''}${b.notes ? `<small>“${esc(b.notes)}”</small>` : ''}</span>
-                  <span class="s s-new">New</span>
-                  <span class="a">${kes((Number(addMoney(b.row.price, b.modifierDelta)) * b.quantity).toFixed(2))}</span>
-                </li>`,
-              )
+              .map((b) => {
+                const unit = addMoney(b.row.price, b.modifierDelta);
+                return `<li class="basket">
+                  <span class="stepper"><button data-dec="${b.id}" aria-label="One less">−</button><output>${b.quantity}</output><button data-inc="${b.id}" aria-label="One more">+</button></span>
+                  <span class="n"><b>${esc(b.row.portionName ? `${b.row.name} (${b.row.portionName})` : b.row.name)}</b><small>KSh ${kes(unit)} each</small>${b.modifierNames.length ? `<small>${b.modifierNames.map(esc).join(', ')}</small>` : ''}${b.notes ? `<small>“${esc(b.notes)}”</small>` : ''}</span>
+                  <span class="a">KSh ${kes((Number(unit) * b.quantity).toFixed(2))}</span>
+                </li>`;
+              })
               .join('')}
-            ${!live.length && !this.basket.length ? '<li class="muted">Tap items on the left to start the order.</li>' : ''}
+            ${!live.length && !this.basket.length ? '<li class="empty">Tap items on the left to start the order.</li>' : ''}
           </ul>
           <div class="totals">
-            ${this.basket.length ? `<div><span>New items</span><strong>${kes(basketTotal)}</strong></div>` : ''}
-            <div><span>Total</span><strong>${kes(c.totals.total)}</strong></div>
-            ${Number(c.totals.paid) || Number(c.totals.roomCharged) ? `<div><span>Paid / charged</span><span>${kes(addMoney(c.totals.paid, c.totals.roomCharged))}</span></div>` : ''}
-            ${Number(c.totals.pending) ? `<div><span>Pending payment</span><span>${kes(c.totals.pending)}</span></div>` : ''}
-            <div class="due"><span>Balance due</span><strong>${kes(c.totals.balance)}</strong></div>
+            ${this.basket.length ? `<div><span>Not sent yet</span><span>KSh ${kes(basketTotal)}</span></div>` : ''}
+            ${Number(c.totals.paid) || Number(c.totals.roomCharged) ? `<div><span>Paid / charged</span><span>KSh ${kes(addMoney(c.totals.paid, c.totals.roomCharged))}</span></div>` : ''}
+            ${Number(c.totals.pending) ? `<div><span>Pending payment</span><span>KSh ${kes(c.totals.pending)}</span></div>` : ''}
+            <div class="due"><span>${Number(c.totals.paid) || Number(c.totals.roomCharged) ? 'Balance' : 'Total'}</span><strong>KSh ${kes(due)}</strong></div>
           </div>
-          ${c.status === 'open' ? `
-          <div class="actions">
-            <button class="primary big" data-act="send" ${!this.basket.length && !live.some((l) => l.status === 'draft') ? 'disabled' : ''}>Send${this.basket.length ? ` ${this.basket.reduce((a, b) => a + b.quantity, 0)} item(s)` : ''}</button>
-            <button data-act="hold" ${!this.basket.length ? 'disabled' : ''}>Hold</button>
-            <button data-act="serve" ${offline ? 'disabled' : ''}>Served</button>
-            <button data-act="bill" ${offline ? 'disabled' : ''}>Print bill</button>
-            <button class="primary" data-act="pay" ${offline || this.basket.length ? 'disabled' : ''}>Pay</button>
-            <button data-act="room" ${offline || this.basket.length ? 'disabled' : ''}>Charge to room</button>
-            <button data-act="discount" ${offline ? 'disabled' : ''}>Discount</button>
-            <button data-act="cancel" ${offline ? 'disabled' : ''}>Cancel items</button>
-            <button data-act="split" ${offline ? 'disabled' : ''}>Split</button>
-            <button data-act="move" ${offline ? 'disabled' : ''}>Move</button>
-            <button data-act="merge" ${offline ? 'disabled' : ''}>Merge</button>
-            <button data-act="house" ${offline || this.basket.length ? 'disabled' : ''}>House account</button>
-            <button class="danger" data-act="void" ${offline ? 'disabled' : ''}>Void check</button>
-          </div>
-          ${offline ? '<p class="note">Offline: you can keep taking orders; payments and room charges wait for the connection.</p>' : ''}` : `
-          <div class="actions"><button data-act="bill">Print receipt</button><button class="primary" data-act="back2">Done</button></div>`}
+          ${open
+            ? `<div class="actions">
+              <button class="a-hold" data-act="hold" ${!this.basket.length ? 'disabled' : ''}>❚❚ Hold</button>
+              <button class="a-send" data-act="send" ${!this.basket.length && !live.some((l) => l.status === 'draft') ? 'disabled' : ''}>➤ Send order${this.basket.length ? ` (${this.basket.reduce((a, b) => a + b.quantity, 0)})` : ''}</button>
+              <button class="a-bill" data-act="bill" ${offline ? 'disabled' : ''}>⎙ Print bill</button>
+              <button class="a-plain" data-act="serve" ${offline ? 'disabled' : ''}>✓ Served</button>
+              <button class="a-pay" data-act="pay" ${noPay ? 'disabled' : ''} title="${this.basket.length ? 'Send the new items first' : ''}">PAY KSh ${kes(due)}</button>
+              <div class="tenders">
+                <button data-tender="cash" ${noPay ? 'disabled' : ''}>Cash</button>
+                <button data-tender="mpesa" ${noPay ? 'disabled' : ''}>M-Pesa</button>
+                <button data-tender="card" ${noPay ? 'disabled' : ''}>Card</button>
+                <button data-act="room" ${noPay ? 'disabled' : ''}>Room</button>
+              </div>
+              <details class="more">
+                <summary>Split, merge and more</summary>
+                <div class="more-grid">
+                  <button data-act="split" ${offline ? 'disabled' : ''}>Split bill</button>
+                  <button data-act="evenly" ${noPay ? 'disabled' : ''}>Split evenly</button>
+                  <button data-act="merge" ${offline ? 'disabled' : ''}>Merge bills</button>
+                  <button data-act="move" ${offline ? 'disabled' : ''}>Move table</button>
+                  <button data-act="discount" ${offline ? 'disabled' : ''}>Discount</button>
+                  <button data-act="cancel" ${offline ? 'disabled' : ''}>Cancel items</button>
+                  <button data-act="house" ${noPay ? 'disabled' : ''}>House account</button>
+                  <button class="danger" data-act="void" ${offline ? 'disabled' : ''}>Void bill</button>
+                </div>
+              </details>
+              ${offline ? '<p class="note">Offline: keep taking orders. Payments and room charges wait for the connection.</p>' : '<p class="note">Tap sent items to pick them for split, discount or cancel.</p>'}
+            </div>`
+            : `<div class="actions"><button class="a-bill" data-act="bill">⎙ Print receipt</button><button class="a-pay" data-act="back">Done</button></div>`}
         </section>
-      </div>`;
+      </div>`,
+    );
 
     const on = (sel: string, fn: (el: HTMLElement) => void) => this.root.querySelectorAll<HTMLElement>(sel).forEach((el) => el.addEventListener('click', () => fn(el)));
-    on('[data-act=back], [data-act=back2]', () => void this.leaveCheck());
+    on('[data-act=back]', () => void this.showFloor());
     on('[data-cat]', (el) => {
       this.category = el.dataset.cat!;
+      this.search = '';
       this.renderCheck();
     });
-    on('[data-item]', (el) => void this.pickItem(el.dataset.item!));
+    const search = this.root.querySelector<HTMLInputElement>('[data-search]')!;
+    search.addEventListener('input', () => {
+      this.search = search.value;
+      this.root.querySelector('[data-items]')!.innerHTML = this.itemsHtml();
+    });
+    // Delegated, so tiles redrawn by the search keep working.
+    this.root.querySelector('[data-items]')!.addEventListener('click', (e) => {
+      const tile = (e.target as HTMLElement).closest<HTMLElement>('[data-item]');
+      if (tile && !tile.hasAttribute('disabled')) void this.pickItem(tile.dataset.item!);
+    });
     on('[data-line]', (el) => {
       const id = el.dataset.line!;
       if (this.selected.has(id)) this.selected.delete(id);
@@ -457,12 +495,14 @@ export class WaiterApp {
       this.queue.dismiss(el.dataset.dismiss!);
       this.renderCheck();
     });
+    on('[data-tender]', (el) => void this.pay(el.dataset.tender).catch(showError));
     const act = (name: string, fn: () => Promise<unknown>) => on(`[data-act=${name}]`, () => void fn().catch(showError));
     act('send', () => this.submitBasket(true));
     act('hold', () => this.submitBasket(false));
     act('serve', () => this.serve());
     act('bill', async () => printHtml(await api.html(`${this.pos}/checks/${c.id}/print`)));
     act('pay', () => this.pay());
+    act('evenly', () => this.splitEvenly());
     act('room', () => this.roomCharge());
     act('discount', () => this.discount());
     act('cancel', () => this.cancelLines());
@@ -473,9 +513,31 @@ export class WaiterApp {
     act('void', () => this.voidCheck());
   }
 
-  private async leaveCheck() {
-    if (this.basket.length && !(await confirmBox('Leave without sending?', 'The new items have not been sent and will be lost.', 'Leave', true))) return;
-    await this.showFloor();
+  /** Menu tiles for the chosen category, or every item matching the search. */
+  private itemsHtml(): string {
+    const m = this.menu!;
+    const c = this.check!;
+    const term = this.search.trim().toLowerCase();
+    const visible = groupItems(m.items).filter((g) =>
+      term
+        ? g.rows.some((r) => r.name.toLowerCase().includes(term) || r.code.toLowerCase().includes(term))
+        : this.category === 'ALL' || (this.category === 'FAV' ? g.rows.some((r) => r.isFavourite) : g.rows[0].categoryCode === this.category),
+    );
+    return (
+      visible
+        .map((g) => {
+          const r = g.rows[0];
+          const off = g.rows.every((x) => !x.isAvailable);
+          const blockedAlcohol = r.isAlcohol && !m.liquorAllowedNow;
+          const left = g.rows.find((x) => x.stockRemaining !== null)?.stockRemaining;
+          return `<button class="tile ${tileClass(r.categoryCode)} ${off ? 'off' : ''}" data-item="${esc(r.itemId)}" ${c.status !== 'open' ? 'disabled' : ''}>
+            <strong>${esc(r.name)}</strong>
+            <span>${g.rows.length > 1 ? 'from ' : ''}KSh ${kes(minPrice(g.rows)).replace(/\.00$/, '')}</span>
+            ${off ? '<em>Not available</em>' : blockedAlcohol ? '<em>Outside licence hours</em>' : left != null ? `<em>${Number(left)} left</em>` : ''}
+          </button>`;
+        })
+        .join('') || `<p class="muted">${term ? 'No item matches that search.' : 'Nothing here.'}</p>`
+    );
   }
 
   private bump(id: string, by: number) {
@@ -621,17 +683,18 @@ export class WaiterApp {
   // ---------------------------------------------------------------------------
   // Settlement (POS-08 … POS-10, POS-18)
   // ---------------------------------------------------------------------------
-  private async pay() {
+  private async pay(preset?: string, amount?: string) {
     await this.flushDrafts();
     const c = this.check!;
     const due = c.totals.balance;
     const res = await modal(
       `Pay ${c.number}`,
-      `<p class="big-number">${kes(due)} due</p>
+      `<p class="big-number">KSh ${kes(due)} due</p>
        <label>Tender<select name="tender">
-         <option value="cash">Cash</option><option value="mpesa">M-PESA</option><option value="card">Card</option>
-         <option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></label>
-       <label>Amount<input name="amount" inputmode="decimal" required value="${esc(due)}" pattern="\\d+(\\.\\d{1,2})?"></label>
+         ${[['cash', 'Cash'], ['mpesa', 'M-PESA'], ['card', 'Card'], ['bank_transfer', 'Bank transfer'], ['other', 'Other']]
+           .map(([v, t]) => `<option value="${v}" ${v === (preset ?? 'cash') ? 'selected' : ''}>${t}</option>`)
+           .join('')}</select></label>
+       <label>Amount<input name="amount" inputmode="decimal" required value="${esc(amount ?? due)}" pattern="\\d+(\\.\\d{1,2})?"></label>
        <label data-for="cash">Cash received<input name="tendered" inputmode="decimal" pattern="\\d+(\\.\\d{1,2})?" placeholder="for change"></label>
        <label data-for="ref">Reference (M-PESA code, card approval)<input name="reference" maxlength="60" autocomplete="off"></label>
        <p class="muted">Pay part now and the rest with another tender to split by amount.</p>`,
@@ -662,6 +725,25 @@ export class WaiterApp {
       throw err;
     }
     this.renderCheck();
+  }
+
+  /**
+   * Split evenly (POS-08): works out one person's share and takes it with the
+   * chosen tender; the next person pays the next share from what is left.
+   */
+  private async splitEvenly() {
+    await this.flushDrafts();
+    const due = this.check!.totals.balance;
+    const res = await modal(
+      'Split evenly',
+      `<p class="big-number">KSh ${kes(due)} due</p>
+       <label>How many people still have to pay?<input name="people" type="number" min="2" max="40" value="2" required></label>
+       <label>This person pays by<select name="tender"><option value="cash">Cash</option><option value="mpesa">M-PESA</option><option value="card">Card</option></select></label>
+       <p class="muted">Each share is rounded down to the cent. The last person pays whatever is left with the PAY button.</p>`,
+      { submit: 'Next' },
+    );
+    if (!res) return;
+    await this.pay(res.tender, evenShare(due, Number(res.people)));
   }
 
   /** Lines held on the server as drafts go out before settling (the server also does this). */
@@ -897,6 +979,26 @@ function groupItems(rows: MenuRow[]): Array<{ itemId: string; rows: MenuRow[] }>
   const map = new Map<string, MenuRow[]>();
   for (const r of rows) map.set(r.itemId, [...(map.get(r.itemId) ?? []), r]);
   return [...map.entries()].map(([itemId, rs]) => ({ itemId, rows: rs }));
+}
+
+/** One person's share of an amount split n ways, rounded down to the cent. */
+export function evenShare(amount: string, people: number): string {
+  const [whole, frac = ''] = amount.split('.');
+  const cents = BigInt(whole) * 100n + BigInt((frac + '00').slice(0, 2));
+  const share = people > 1 ? cents / BigInt(people) : cents;
+  return `${share / 100n}.${String(share % 100n).padStart(2, '0')}`;
+}
+
+/** Tile colour by category, so a waiter finds food, beer, spirits and soft drinks at a glance. */
+export function tileClass(category: string): string {
+  const known: Record<string, string> = {
+    ALL: 't-all', FAV: 't-fav', BREAKFAST: 't-food', STARTERS: 't-food', MAINS: 't-food', GRILL: 't-grill', DESSERTS: 't-sweet',
+    COFFEE: 't-coffee', SOFT: 't-soft', BEER: 't-beer', SPIRITS: 't-spirit', WINE: 't-wine', COCKTAILS: 't-cocktail',
+    SHOP: 't-other', LEISURE: 't-other', SPA: 't-other',
+  };
+  if (known[category]) return known[category];
+  const spare = ['t-food', 't-soft', 't-beer', 't-spirit', 't-wine', 't-other'];
+  return spare[[...category].reduce((a, ch) => a + ch.charCodeAt(0), 0) % spare.length];
 }
 
 function minPrice(rows: MenuRow[]): string {

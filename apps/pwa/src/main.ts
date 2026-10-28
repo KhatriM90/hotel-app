@@ -7,11 +7,18 @@ import './style.css';
 
 const app = document.getElementById('app')!;
 app.innerHTML = `
-  <header class="top"><img src="/pwa/brand/yeastay-logo-white.svg" alt="YeaStay" /><span class="spacer"></span><span id="who"></span></header>
+  <header class="top"><img src="/pwa/brand/yeastay-logo-white.svg" alt="YeaStay" /><span class="spacer"></span><span id="who"></span><span class="clock" id="clock"></span></header>
   <div class="status checking" role="status" aria-live="polite" id="status"></div>
   <main id="main"></main>`;
 const main = document.getElementById('main')!;
 const who = document.getElementById('who')!;
+const clock = document.getElementById('clock')!;
+function tick() {
+  const now = new Date();
+  clock.innerHTML = `${now.toLocaleDateString('en-KE', { weekday: 'short', day: 'numeric', month: 'short' })}<b>${now.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}</b>`;
+}
+tick();
+setInterval(tick, 20_000);
 
 // ---------------------------------------------------------------------------
 // Connection (OPS-04): what the device shows is what the server answered.
