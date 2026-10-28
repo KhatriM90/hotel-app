@@ -488,7 +488,6 @@ export class PosAdminController {
 
   @Patch('outlets/:outletCode/prices/:priceId')
   @RequirePermission('pos.menu.manage')
-  @Idempotent()
   updatePrice(
     @CurrentProperty() p: CurrentPropertyT,
     @Param('outletCode') outletCode: string,
@@ -540,14 +539,12 @@ export class PosAdminController {
 
   @Put('settings')
   @RequirePermission('businessday.configure')
-  @Idempotent()
   updateSettings(@CurrentProperty() p: CurrentPropertyT, @Body(new ZodPipe(PropertySettings)) b: Body<typeof PropertySettings>) {
     return this.settings.updateProperty(p.id, b);
   }
 
   @Put('outlets/:outletCode/settings')
   @RequirePermission('businessday.configure')
-  @Idempotent()
   updateOutlet(@CurrentProperty() p: CurrentPropertyT, @Param('outletCode') outletCode: string, @Body(new ZodPipe(OutletSettings)) b: Body<typeof OutletSettings>) {
     return this.settings.updateOutlet(p.id, outletCode, b);
   }
