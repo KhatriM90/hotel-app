@@ -10,6 +10,8 @@ const PG_STATUS: Record<string, { status: number; error: string }> = {
   HT001: { status: HttpStatus.CONFLICT, error: 'append_only' },
   HT002: { status: HttpStatus.CONFLICT, error: 'finalised_record' },
   HT003: { status: HttpStatus.FORBIDDEN, error: 'property_scope' },
+  HT004: { status: HttpStatus.CONFLICT, error: 'invalid_transition' }, // booking lifecycle (RES-03)
+  '23P01': { status: HttpStatus.CONFLICT, error: 'room_unavailable' }, // allocation overlap (RES-04)
   '42501': { status: HttpStatus.FORBIDDEN, error: 'property_scope' }, // RLS WITH CHECK violation
   '23505': { status: HttpStatus.CONFLICT, error: 'duplicate' },
   '23503': { status: HttpStatus.UNPROCESSABLE_ENTITY, error: 'invalid_reference' },

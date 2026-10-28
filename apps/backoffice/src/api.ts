@@ -49,9 +49,16 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Machine-readable reason from the API, e.g. approval_required, no_availability. */
+    readonly code?: string,
   ) {
     super(message);
   }
+}
+
+/** A fresh key per user action; resubmitting the same action reuses it (BIL-04, AT-03). */
+export function newIdempotencyKey(): string {
+  return `bo-${crypto.randomUUID()}`;
 }
 
 const TOKEN_KEY = 'yeastay.token';
@@ -72,17 +79,48 @@ export class Api {
     this.storage.removeItem(TOKEN_KEY);
   }
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async raw(path: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set('content-type', 'application/json');
     if (this.token) headers.set('authorization', `Bearer ${this.token}`);
     const res = await this.fetchImpl(`${this.base}${path}`, { ...init, headers });
     if (res.status === 401) this.logout();
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { message?: string };
-      throw new ApiError(res.status, body.message ?? `Request failed (${res.status})`);
+      const body = (await res.json().catch(() => ({}))) as { message?: string | string[]; error?: string; issues?: Array<{ path: string; message: string }> };
+      const message = body.issues?.length
+        ? body.issues.map((i) => `${i.path}: ${i.message}`).join('; ')
+        : Array.isArray(body.message)
+          ? body.message.join('; ')
+          : body.message;
+      throw new ApiError(res.status, message ?? `Request failed (${res.status})`, body.error);
     }
-    return (await res.json()) as T;
+    return res;
+  }
+
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    return (await (await this.raw(path, init)).json()) as T;
+  }
+
+  get<T>(path: string): Promise<T> {
+    return this.request<T>(path);
+  }
+
+  /** POST with an Idempotency-Key; pass the same key to retry the same action safely. */
+  post<T>(path: string, body: unknown = {}, key = newIdempotencyKey()): Promise<T> {
+    return this.request<T>(path, { method: 'POST', body: JSON.stringify(body), headers: { 'Idempotency-Key': key } });
+  }
+
+  patch<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
+  }
+
+  put<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
+  }
+
+  /** Printable documents are served as HTML behind the same bearer token. */
+  async html(path: string): Promise<string> {
+    return (await this.raw(path)).text();
   }
 
   async login(username: string, password: string): Promise<Me> {

@@ -1,7 +1,33 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { hasPermission, Permission } from '@hotel/shared';
 import { api, ApiError, Me, OutboxEvent, Outlet, Property } from './api';
+import { Session, SessionContext } from './ui';
+import { CalendarPage } from './frontdesk/Calendar';
+import { DashboardPage } from './frontdesk/Dashboard';
+import { FolioPage } from './frontdesk/Folio';
+import { GuestPage, GuestsPage } from './frontdesk/Guests';
+import { RequestsPage } from './frontdesk/Requests';
+import { NewReservationPage, ReservationDetailPage, ReservationsPage } from './frontdesk/Reservations';
+import { RatesPage, RoomsPage } from './frontdesk/Rooms';
 
-type Page = 'overview' | 'outlets' | 'integration';
+type Page =
+  | 'desk' | 'calendar' | 'reservations' | 'new-reservation' | 'reservation' | 'folio'
+  | 'guests' | 'guest' | 'requests' | 'rooms' | 'rates'
+  | 'overview' | 'outlets' | 'integration';
+
+/** Main navigation; each entry shows only for users holding its permission (the API enforces the same, SEC-01). */
+const NAV: Array<[Page, string, Permission?]> = [
+  ['desk', 'Front desk', 'frontdesk.operate'],
+  ['calendar', 'Availability', 'reservation.read'],
+  ['reservations', 'Reservations', 'reservation.read'],
+  ['guests', 'Guests', 'guest.read'],
+  ['requests', 'Guest requests', 'guest_request.manage'],
+  ['rooms', 'Rooms', 'room.read'],
+  ['rates', 'Rates and policy', 'rate.read'],
+  ['overview', 'Properties'],
+  ['outlets', 'Outlets'],
+  ['integration', 'SAP postings'],
+];
 
 function Login({ onLogin }: { onLogin: (me: Me) => void }) {
   const [username, setUsername] = useState('');
@@ -140,30 +166,45 @@ export function App() {
   const [checking, setChecking] = useState(Boolean(api.token));
   const [properties, setProperties] = useState<Property[]>([]);
   const [current, setCurrent] = useState<string>('');
-  const [page, setPage] = useState<Page>('overview');
+  const [route, setRoute] = useState<{ page: Page; params: Record<string, string> }>({ page: 'desk', params: {} });
 
   useEffect(() => {
     if (!api.token) return;
     api.me().then(setMe, () => api.logout()).finally(() => setChecking(false));
   }, []);
 
-  useEffect(() => {
-    if (!me) return;
+  const loadProperties = useCallback(() => {
     api.properties().then((ps) => {
       setProperties(ps);
       setCurrent((c) => c || ps[0]?.code || '');
     });
-  }, [me]);
+  }, []);
+
+  useEffect(() => {
+    if (!me) return;
+    loadProperties();
+    if (!hasPermission(me.roles, 'frontdesk.operate')) setRoute({ page: 'overview', params: {} });
+  }, [me, loadProperties]);
+
+  const property = properties.find((p) => p.code === current);
+  const go = useCallback((page: string, params: Record<string, string> = {}) => {
+    const { property: switchTo, ...rest } = params;
+    if (switchTo) setCurrent(switchTo);
+    setRoute({ page: page as Page, params: rest });
+    window.scrollTo?.(0, 0);
+  }, []);
+  const session = useMemo<Session | null>(
+    () => (me && property ? { me, property, go, refreshProperty: loadProperties } : null),
+    [me, property, go, loadProperties],
+  );
 
   if (checking) return null;
   if (!me) return <Login onLogin={setMe} />;
 
-  const property = properties.find((p) => p.code === current);
-  const nav: Array<[Page, string]> = [
-    ['overview', 'Overview'],
-    ['outlets', 'Outlets'],
-    ['integration', 'SAP postings'],
-  ];
+  const nav = NAV.filter(([, , perm]) => !perm || hasPermission(me.roles, perm));
+  const { page, params } = route;
+  const section: Page =
+    page === 'new-reservation' || page === 'reservation' || page === 'folio' ? 'reservations' : page === 'guest' ? 'guests' : page;
 
   return (
     <>
@@ -171,19 +212,28 @@ export function App() {
         <img src="/brand/yeastay-logo-white.svg" alt="YeaStay" />
         <span className="spacer" />
         {properties.length > 0 && (
-          <select aria-label="Property" value={current} onChange={(e) => setCurrent(e.target.value)}>
+          <select
+            aria-label="Property"
+            value={current}
+            onChange={(e) => {
+              setCurrent(e.target.value);
+              // Records belong to one property; switching leaves the record page (CFG-02).
+              if (['reservation', 'folio', 'new-reservation'].includes(page)) setRoute({ page: 'desk', params: {} });
+            }}
+          >
             {properties.map((p) => (
               <option key={p.code} value={p.code}>{p.name}</option>
             ))}
           </select>
         )}
+        {property && <span className="ys-user">Business date {property.currentBusinessDate}</span>}
         <span className="ys-user">{me.displayName}</span>
         <button className="ys-btn" onClick={() => { api.logout(); setMe(null); }}>Sign out</button>
       </header>
       <div className="ys-layout">
         <nav className="ys-nav" aria-label="Main">
           {nav.map(([key, label]) => (
-            <button key={key} aria-current={page === key ? 'page' : undefined} onClick={() => setPage(key)}>
+            <button key={key} aria-current={section === key ? 'page' : undefined} onClick={() => go(key)}>
               {label}
             </button>
           ))}
@@ -192,6 +242,21 @@ export function App() {
           {page === 'overview' && <Overview properties={properties} />}
           {page === 'outlets' && property && <Outlets property={property} />}
           {page === 'integration' && property && <Integration property={property} />}
+          {session && (
+            <SessionContext.Provider value={session}>
+              {page === 'desk' && <DashboardPage key={current} />}
+              {page === 'calendar' && <CalendarPage key={current} />}
+              {page === 'reservations' && <ReservationsPage key={current + (params.q ?? '')} params={params} />}
+              {page === 'new-reservation' && <NewReservationPage key={current + JSON.stringify(params)} params={params} />}
+              {page === 'reservation' && params.id && <ReservationDetailPage key={params.id} id={params.id} />}
+              {page === 'folio' && params.id && <FolioPage key={params.id} id={params.id} />}
+              {page === 'guests' && <GuestsPage />}
+              {page === 'guest' && params.id && <GuestPage key={params.id} id={params.id} />}
+              {page === 'requests' && <RequestsPage key={current} />}
+              {page === 'rooms' && <RoomsPage key={current} />}
+              {page === 'rates' && <RatesPage key={current} />}
+            </SessionContext.Provider>
+          )}
         </main>
       </div>
     </>
