@@ -95,12 +95,12 @@ Migrations `0010`–`0012`; API in `apps/api/src/frontoffice`; reception screens
 | AT-09 | Done (front desk) | A charge posted during checkout is either settled or refused; no balance appears afterwards. Re-test when POS posting exists. |
 | AT-18 | Partial | Kahama receptionist gets 403 on K1 routes and 404 for K1 ids on Kahama routes; guest stay history hides K1 stays; group accounts see all three. Consolidated reports not yet. |
 
-### Decisions in this PR (please confirm)
+### Decisions in this PR
 
-- **Guest stay history is limited to the properties the viewer can access.** Profiles are shared (CFG-05), but a Kahama receptionist does not see the guest's K1 stays, to honour AT-18. Group users see everything.
-- **Charge prices include tax.** VAT and the catering levy are each calculated on the net amount; any rounding cent goes to the larger tax. To be confirmed by the accountant (BIL-08).
+- **Guest profiles are shared across properties; stay history is limited to the properties the viewer can access** (confirmed by Manish Khatri, 28 Oct 2026). A Kahama receptionist sees the profile but not the guest's K1 stays, to honour AT-18. Group users see everything.
+- **Charge prices include VAT 16% and catering levy 2%** (confirmed by Manish Khatri, 28 Oct 2026). Each is calculated on the net amount; any rounding cent goes to the larger tax. Rounding is still to be signed off by the accountant (BIL-08).
 - **Deposits before arrival are payments on the stay's folio**, flagged as deposits. They reduce the balance once confirmed and are marked as applied at check-in.
-- **Checkout on the arrival day charges one night**; leaving early on later days charges the nights up to today and shortens the stay.
+- **Checkout on the arrival day charges one night** (confirmed by Manish Khatri, 28 Oct 2026); leaving early on later days charges the nights up to today and shortens the stay.
 - **Seeded rates, policies, room numbers and guests are test data** for this module, not the client's real tariff.
 
 ## Not yet satisfied (everything else)
