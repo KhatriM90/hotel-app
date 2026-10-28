@@ -14,6 +14,8 @@ export const DOCUMENT_TYPES = {
   CREDIT_NOTE: 'CN',
   REFUND: 'RF',
   PROFORMA: 'PF',
+  POS_TICKET: 'KOT',
+  CASH_SHIFT: 'SFT',
 } as const;
 
 export type DocumentType = keyof typeof DOCUMENT_TYPES;

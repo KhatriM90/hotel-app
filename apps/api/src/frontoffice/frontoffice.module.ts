@@ -12,6 +12,6 @@ import { RoomsService } from './rooms.service';
 @Module({
   controllers: [RoomsController, ReservationsController, FrontDeskController, FoliosController, GuestsController],
   providers: [ApprovalsService, RoomsService, RatesService, GuestsService, FoliosService, ReservationsService, FrontDeskService],
-  exports: [RoomsService, FoliosService],
+  exports: [RoomsService, FoliosService, ApprovalsService],
 })
 export class FrontOfficeModule {}

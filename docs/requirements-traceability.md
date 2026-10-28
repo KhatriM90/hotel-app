@@ -75,11 +75,11 @@ Migrations `0010`–`0012`; API in `apps/api/src/frontoffice`; reception screens
 | FD-05 | Done | Room move changes the allocation only; stay, folio, charges and payments stay put; `room_moves` keeps the history; the old room becomes dirty. AT-05 tested. *Key history needs a door-lock integration, which the brief does not specify.* |
 | FD-06 | Done | Early check-in and late check-out fees from policy, waivers with approval, revised departure time; extensions through amendment with availability checks. |
 | FD-07 | Done | Guest requests (maintenance, linen, wake-up, housekeeping, transport, other) with owner, priority, due time, status and handover notes. |
-| FD-08 | Partial | Folio preview and running statement; blocks while payments are pending; posts nights still due; settles by tenders or an approved company transfer; requires zero balance; issues the invoice; closes the folio and stay; marks the room dirty. **Open POS checks (BIL-11), SAP posting (SAP-04) and eTIMS submission (INT-02) are not checked or done yet.** |
+| FD-08 | Partial | Folio preview and running statement; blocks while payments are pending; posts nights still due; settles by tenders or an approved company transfer; requires zero balance; issues the invoice; closes the folio and stay; marks the room dirty. Open POS checks now block checkout (BIL-11, POS PR). **SAP posting of the folio (SAP-04) and eTIMS submission (INT-02) are not done yet.** |
 | BIL-01 | Done | One folio per stay for accommodation, food, drinks, laundry, minibar and other charges, with service date, quantity, unit price, discount, outlet, reference, and a per-charge tax split. |
 | BIL-06 | Done | Deposits, partial payments, several payments, split tenders in one action, a receipt per payment; pending vs confirmed (confirm or fail); references unique per tender; balance = charges − confirmed payments. *Allocation across several folios arrives with split folios (BIL-05).* |
 | BIL-09 | Done | Pro forma (`PF`), running statement, final invoice (`INV`) and receipts (`RCT`) with unique, property-prefixed, gapless numbers, stored immutably with links to their booking, stay, folio or payment, and printable. Credit notes arrive with BIL-07. |
-| BIL-02 | Partial | Server-side checks at posting: stay checked in, outlet belongs to the same property, room-charge flag, credit limit. POS posting itself is not built. |
+| BIL-02 | Done | Server-side checks at posting: stay checked in, outlet belongs to the same property, room-charge flag, credit limit. POS room charges use the same checks (see the POS PR). |
 | BIL-07 | Partial | Charge reversal is a linked negative line with reason and manager approval; one reversal per charge. Refunds and credit notes not yet. |
 | BIL-10 | Partial | Basic close-day: posts each in-house stay's room night once (unique per stay and date) and advances the business date; refuses a stale date. Reconciliation, exception flags and closed-date locking not yet. |
 | BIL-16 | Partial | Charges split VAT (O1, 16%) and catering levy (C1, 2%) as separate tax lines, configured per charge code. SAP/GL mapping arrives with posting. |
@@ -89,10 +89,10 @@ Migrations `0010`–`0012`; API in `apps/api/src/frontoffice`; reception screens
 | CFG-05 | Partial | Guest profiles and companies are group-wide. Room types and rate plans are per property; group-level definitions with per-property overrides are not built. |
 | HK-01 | Partial | Rooms page shows and sets clean, dirty, inspected, in-progress next to occupancy and blocks; checkout and moves mark rooms dirty. The housekeeping phone app is not built. |
 | AT-01 | Done | Two nights, deposit 5,000, food/drink/laundry, cash 8,000 + card 3,500, charges 16,500, balance zero (tested, and by hand per the checklist). |
-| AT-04 | Partial | Manual charges to a checked-out stay, a stay with room charges off, or over the credit limit are refused with a reason (tested). Re-test when POS posting exists. |
+| AT-04 | Partial | Manual charges to a checked-out stay, a stay with room charges off, or over the credit limit are refused with a reason (tested). Re-tested with POS room charges (POS PR). |
 | AT-05 | Done | Move 101 → 205; charges stay on the stay; the next guest in 101 inherits none. |
 | AT-08 | Done | Two receptionists race for the last suite, and six requests race for one room: exactly one succeeds. |
-| AT-09 | Done (front desk) | A charge posted during checkout is either settled or refused; no balance appears afterwards. Re-test when POS posting exists. |
+| AT-09 | Done (front desk) | A charge posted during checkout is either settled or refused; no balance appears afterwards. Re-tested with POS room charges (POS PR). |
 | AT-18 | Partial | Kahama receptionist gets 403 on K1 routes and 404 for K1 ids on Kahama routes; guest stay history hides K1 stays; group accounts see all three. Consolidated reports not yet. |
 
 ### Decisions in this PR
@@ -104,9 +104,67 @@ Migrations `0010`–`0012`; API in `apps/api/src/frontoffice`; reception screens
 - **Business day runs 08:00 to 08:00** for all three properties (confirmed by Manish Khatri, 28 Oct 2026; migration `0013`). Sales between midnight and 08:00 belong to the previous business date. POS day close and the full night audit (BIL-10) will use this cut-off.
 - **Seeded rates, policies, room numbers and guests are test data** for this module, not the client's real tariff.
 
+## Requirement IDs: point of sale PR
+
+Migrations `0014`–`0015`; API in `apps/api/src/pos`; waiter, bar and kitchen tablets in `apps/pwa/src`; back-office POS screens in `apps/backoffice/src/pos`; sample menus in `apps/api/src/seed-pos.ts`; tests in `apps/api/test/pos.e2e-spec.ts` (29), `packages/shared/src/pos.test.ts` and `apps/pwa/src/queue.test.ts`. Manual checklist: `docs/how-to-test-pos.md`.
+
+| ID | Status | Notes |
+|---|---|---|
+| POS-01 | Done | Tablet POS with search, category tabs, favourites and availability; tablet and desktop layouts. No item images yet (the brief says "if useful"). |
+| POS-02 | Done | Group menu with categories, items, portions (tot/double/bottle, glass/bottle), modifier groups with min/max and price deltas, preparation notes and a charge code that carries the tax category. |
+| POS-03 | Done | Prices per outlet and portion (append-only history); scheduled happy-hour rules by category, weekday and time; line or check discounts and comps with reasons. Discounts above the property's free limit, and every comp, need a manager (SEC-02). |
+| POS-04 | Done | Table, counter, takeaway and room service per outlet; residents (room service, charge to room) and walk-in customers. |
+| POS-05 | Done | Tables per outlet, covers, assigned waiter, open checks and named bar tabs; move a check to another table. |
+| POS-06 | Done | Line states draft → sent → preparing → ready → served, plus cancelled and wasted; check states open → closed or voided. Every step is in an append-only check history. |
+| POS-07 | Done | Food routes to the kitchen, drinks to the outlet's bar, per outlet. Tickets show table/room/tab, server, time, modifiers and notes. Reprints are numbered and say REPRINT; cancellations print a CANCEL ticket. Tickets print from the browser until the print bridge (INT-04) exists. |
+| POS-08 | Done | Split by item or part quantity to a new check, merge open checks, move tables, split settlement across tenders, room charge and house account. Totals are unchanged to the cent. |
+| POS-09 | Done | Lookup in-house guests by room or name with eligibility and available credit; posts itemised folio charges; shows the folio and reference, or the reason it was refused. |
+| POS-10 | Done | Cash (with change), M-PESA, card, bank transfer and other; mixed tenders; pending payments confirmed or failed; printable bill and receipt; balance due kept. M-PESA is a typed reference until the Daraja integration (INT-01). Email receipts are not built. |
+| POS-11 | Done | Pre-production cancellation (no approval), post-preparation waste, check void and refund are separate actions with reasons; sent items, voids and refunds need a manager; waiters can never refund. |
+| POS-12 | Done | Per-outlet availability and optional daily portion counts; the outlet policy warns or blocks; disabled items cannot be sold, offline included. |
+| POS-13 | Done | Cash shift with opening float, cash drops, paid in, paid out (manager), handover; blind count; expected vs counted; variance reviewed and signed by a manager. Cash payments need an open shift. |
+| POS-17 | Done | Licensed hours per outlet and weekday (crossing midnight allowed); block or warn policy; a manager override with a reason is logged. Seeded hours are placeholders. |
+| POS-18 | Done | Named house accounts (staff meals, directors, entertainment, other) with limits, cost centre and manager approval; reported apart from revenue and never sent to SAP as a sale. |
+| POS-19 | Done | All 43 outlets have POS settings; each has its own price list, availability, routing, alcohol hours, stock policy and cut-off; copy one outlet's configuration to another, across properties for group users. |
+| POS-14, 15, 16, 20 | Not started | Phase 2 (P2). The ticket screen covers the basics of POS-14: queues, age, ready, cancellation acknowledgement. |
+| BIL-02 | Done | The room charge rechecks the stay, folio, room-charge flag and credit limit on the server, under the same locks as checkout. |
+| BIL-03 | Done | Room charges need the guest's signature on the tablet or a staff-verified name; the method, name and signature are stored with the charge. A room number alone is never enough. |
+| SEC-02 | Partial | POS approvals added: discounts over the free limit, comps, cancelling sent items, voids, refunds, cash paid-out, variance review, house-account charges and alcohol-hours overrides, each stored in `approvals`. Stock adjustments and reopening days not yet. |
+| BIL-04 | Partial | Idempotency keys on every POS POST, unique payment references, pending/confirmed/failed payments. Exception reconciliation screen not yet. |
+| BIL-11 | Done (POS) | Checkout is refused while the guest has an open POS check (`open_pos_checks`); a room charge racing checkout is either on the settled bill or refused. Pending SAP/eTIMS checks wait for those integrations. |
+| BIL-12 | Done | A room charge is a folio charge (guest receivable), not a payment; the POS check is settled by transfer and the folio balance rises by the same amount. |
+| OPS-05 | Partial | The tablet keeps the menu and queues new checks, items, sends and holds with device ids and stable idempotency keys; payments and room charges are never queued. On reconnect the queue replays once; a refused action blocks that check and is shown. Tickets need the server, so LAN printing while offline needs the print bridge (INT-04). |
+| CFG-01, CFG-03 | Partial | Business-day cut-off per property with an optional per-outlet override (default 08:00), discount limit, service types, routing, alcohol hours and stock policy, each change audited. |
+| SAP-04, SAP-05 | Partial (mock) | Checks settled by payment queue an A/R invoice and incoming payment (`C-WALKIN`, item `POS-<charge code>`, outlet dimension and warehouse). On a mixed check only the paid share goes now; the room share goes with the folio. No credit memo for refunds yet. |
+| AT-02 | Done | A paid restaurant bill goes to SAP and never to a folio. |
+| AT-03 | Done | A replayed payment or room-charge request records once; a reused M-PESA reference is refused. |
+| AT-07 | Done | Bill split into M-PESA and room charge: only the unpaid part moves to the folio, itemised; SAP gets only the paid share; the sales report reconciles to zero. |
+| AT-09 | Done | A room charge racing checkout lands on the settled bill or is refused (tested with concurrent requests). |
+| AT-10 | Partial | Cancel unprepared (no approval), waste prepared, refund with approval; all visible on the check. Stock deduction in SAP waits for SAP-18. |
+| AT-13 | Done | Float, cash sales and approved paid-out give the expected count; a short count creates a variance for review. |
+| AT-14 | Partial (POS) | Waiters cannot refund; a cashier refunds with a manager. Backup restore is not tested here. |
+| AT-17 | Partial | Orders keep being taken offline and sync once; room charges and payments wait. Ticket printing while offline needs INT-04. |
+| AT-18 | Done (POS) | Kahama staff cannot see or sell at K1 outlets. |
+
+### Decisions in this PR
+
+- **Business day cut-off is per property with an optional per-outlet override** (Manish Khatri, 28 Oct 2026). Default 08:00. A change applies from the next trading day.
+- **POS day close is a manual manager action per outlet** (Manish Khatri, 28 Oct 2026). It refuses while checks are open, stores the Z report and freezes it. The property's business-day close refuses while an outlet day with sales is still open; empty outlet days close themselves.
+- **Room-charged sales are invoiced in SAP with the folio**, not from the POS, so a sale is invoiced once. Paid sales, and the paid share of a mixed check, are invoiced from the POS when the check closes.
+- **Cash shifts belong to the cashier, not the till.** A cashier has one open shift per property, opened at one outlet, and it takes their cash at any outlet of that property. To be confirmed with the client's cashiers.
+- **Seeded menus, prices, alcohol hours, house-account limits and happy hour are test data** until the client sends theirs.
+
+### Gaps carried forward from this PR
+
+- eTIMS fiscal receipts (INT-02); receipts say "eTIMS receipt not yet issued".
+- M-PESA STK push and C2B confirmation (INT-01); card terminals (INT-03).
+- Print bridge for LAN ticket and receipt printers (INT-04).
+- SAP credit memo for POS refunds; SAP till and M-PESA clearing accounts per property (SAP-16); the walk-in customer code.
+- Stock deduction and recipes in SAP (SAP-18).
+
 ## Not yet satisfied (everything else)
 
-HK-02 onwards, MT-*, POS-*, BIL-03, 05, 08, 11, 12, 13–15, INV-*, RPT-*, SEC-05, SEC-07, SEC-08, OPS-01, OPS-05, OPS-06, INT-01, INT-03–06, INT-08–10, SAP-01, SAP-03, SAP-06–10, SAP-12, SAP-16–19, AT-02, AT-06, AT-07, AT-10–17 and SAP-AT01–03, 07–11, 13 are **not started**. SEC-03 admin MFA is still outstanding.
+HK-02 onwards, MT-*, POS-14, 15, 16, 20, BIL-05, 08, 13–15, INV-*, RPT-*, SEC-05, SEC-07, SEC-08, OPS-01, OPS-06, INT-01, INT-03–06, INT-08–10, SAP-01, SAP-03, SAP-06–10, SAP-12, SAP-16–19, AT-06, AT-11, AT-12, AT-15, AT-16 and SAP-AT01–03, 07–11, 13 are **not started**. SEC-03 admin MFA is still outstanding.
 
 ## Client data received (26 Oct 2026)
 

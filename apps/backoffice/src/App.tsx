@@ -9,10 +9,12 @@ import { GuestPage, GuestsPage } from './frontdesk/Guests';
 import { RequestsPage } from './frontdesk/Requests';
 import { NewReservationPage, ReservationDetailPage, ReservationsPage } from './frontdesk/Reservations';
 import { RatesPage, RoomsPage } from './frontdesk/Rooms';
+import { PosDaysPage, PosMenuPage, PosSalesPage, PosSettingsPage, PosShiftsPage } from './pos/Pos';
 
 type Page =
   | 'desk' | 'calendar' | 'reservations' | 'new-reservation' | 'reservation' | 'folio'
   | 'guests' | 'guest' | 'requests' | 'rooms' | 'rates'
+  | 'pos-days' | 'pos-sales' | 'pos-shifts' | 'pos-menu' | 'pos-settings'
   | 'overview' | 'outlets' | 'integration';
 
 /** Main navigation; each entry shows only for users holding its permission (the API enforces the same, SEC-01). */
@@ -24,6 +26,11 @@ const NAV: Array<[Page, string, Permission?]> = [
   ['requests', 'Guest requests', 'guest_request.manage'],
   ['rooms', 'Rooms', 'room.read'],
   ['rates', 'Rates and policy', 'rate.read'],
+  ['pos-days', 'POS day close', 'pos.report'],
+  ['pos-sales', 'POS sales', 'pos.report'],
+  ['pos-shifts', 'Cash shifts', 'pos.report'],
+  ['pos-menu', 'Menus and prices', 'pos.menu.read'],
+  ['pos-settings', 'Business day and POS', 'pos.report'],
   ['overview', 'Properties'],
   ['outlets', 'Outlets'],
   ['integration', 'SAP postings'],
@@ -255,6 +262,11 @@ export function App() {
               {page === 'requests' && <RequestsPage key={current} />}
               {page === 'rooms' && <RoomsPage key={current} />}
               {page === 'rates' && <RatesPage key={current} />}
+              {page === 'pos-days' && <PosDaysPage key={current} />}
+              {page === 'pos-sales' && <PosSalesPage key={current} />}
+              {page === 'pos-shifts' && <PosShiftsPage key={current} />}
+              {page === 'pos-menu' && <PosMenuPage key={current} />}
+              {page === 'pos-settings' && <PosSettingsPage key={current} />}
             </SessionContext.Provider>
           )}
         </main>

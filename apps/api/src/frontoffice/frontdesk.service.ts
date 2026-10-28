@@ -3,6 +3,7 @@ import { addDays, hasPermission, Money, nightsBetween } from '@hotel/shared';
 import { AuditService } from '../audit/audit.service';
 import { DbService, Queryable } from '../db/db.service';
 import { requestContext } from '../db/request-context';
+import { assertNoOpenChecksForStay, assertOutletDaysClosed } from '../pos/common';
 import { ApprovalsService } from './approvals.service';
 import { ApprovalInputT, businessDate, conflict } from './common';
 import { FoliosService, TenderInput } from './folios.service';
@@ -456,7 +457,7 @@ export class FrontDeskService {
 
       const { rows: pending } = await q.query<{ n: number }>(`SELECT count(*)::int AS n FROM folio_payments WHERE folio_id = $1 AND status = 'pending'`, [folio.id]);
       if (pending[0].n) throw conflict(`${pending[0].n} payment(s) on folio ${folio.number} are still pending; confirm or fail them first`, 'pending_payments');
-      // Open POS checks (BIL-11) are checked here once POS exists.
+      await assertNoOpenChecksForStay(q, stay.id);
 
       if (input.tenders?.length) await this.folios.recordTenders(q, folio, input.tenders);
       let balance = Money.of((await this.folios.balance(q, folio.id)).balance);
@@ -530,6 +531,7 @@ export class FrontDeskService {
         [propertyId],
       );
       if (p.d !== expectedDate) throw conflict(`The business date is ${p.d}, not ${expectedDate}; it may already have been closed`, 'stale_business_date');
+      await assertOutletDaysClosed(q, propertyId, p.d);
       const { rows: stays } = await q.query<{ id: string }>(`SELECT id FROM stays WHERE property_id = $1 AND status = 'checked_in' ORDER BY number`, [propertyId]);
       let posted = 0;
       for (const { id } of stays) {

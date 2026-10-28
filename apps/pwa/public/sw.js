@@ -2,9 +2,9 @@
  * YeaStay PWA service worker: caches the app shell so the device opens without
  * internet. API calls are never cached or faked: a request that cannot reach the
  * server fails visibly (OPS-04 "prevent false posting/payment success").
- * The durable offline order queue (OPS-05) arrives with the POS module.
+ * Orders taken offline are queued by the app itself (src/queue.ts, OPS-05), not here.
  */
-const SHELL_CACHE = 'yeastay-shell-v1';
+const SHELL_CACHE = 'yeastay-shell-v2';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
