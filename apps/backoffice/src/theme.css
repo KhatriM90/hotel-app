@@ -78,8 +78,118 @@ table.ys-table { width: 100%; border-collapse: collapse; background: var(--ys-su
 .ys-login input { width: 100%; font: inherit; padding: 10px 12px; min-height: 44px; border: 1px solid var(--ys-border); border-radius: 8px; }
 .ys-login .ys-btn { width: 100%; margin-top: 20px; }
 
+/* ---------- Reception screens ---------- */
+.ys-page-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.ys-page-head h1, .ys-page-head h2 { margin: 0; }
+.ys-page-head .spacer { flex: 1; }
+.ys-page-head .ys-field { margin: 0; }
+.ys-section { margin-top: 22px; }
+.ys-card.ys-section { margin-top: 16px; }
+.ys-section h2 { font-size: 18px; }
+
+.ys-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin: 8px 0 12px; }
+.ys-tiles.small { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.ys-tile { background: var(--ys-surface); border: 1px solid var(--ys-border); border-radius: var(--ys-radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.ys-tile strong { font-family: var(--ys-font-heading); font-size: 24px; color: var(--ys-teal); }
+.ys-tiles.small .ys-tile strong { font-size: 18px; }
+.ys-tile span { color: var(--ys-slate); font-size: 13px; }
+.ys-tile.alert { border-color: var(--ys-amber); box-shadow: inset 4px 0 0 var(--ys-amber); }
+
+.ys-table.compact th, .ys-table.compact td { padding: 7px 10px; font-size: 14px; }
+.ys-table tr.ys-click { cursor: pointer; }
+.ys-table tr.ys-click:hover td { background: var(--ys-teal-050); }
+.ys-table tr.ys-reversed td { color: var(--ys-slate); text-decoration: line-through; text-decoration-color: rgba(79, 98, 100, .5); }
+.ys-nowrap { white-space: nowrap; }
+.ys-actions-cell { white-space: nowrap; text-align: right; }
+.ys-actions-cell > * + * { margin-left: 6px; }
+
+.ys-link { font: inherit; color: var(--ys-teal); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.ys-btn.small { min-height: 34px; padding: 6px 12px; font-size: 14px; }
+.ys-btn.ghost { background: transparent; color: var(--ys-teal); box-shadow: inset 0 0 0 1px var(--ys-border); }
+.ys-btn.ghost:hover { background: var(--ys-teal-050); }
+.ys-btn.danger { background: var(--ys-danger); color: #fff; }
+.ys-btn.danger.ghost { background: transparent; color: var(--ys-danger); }
+.ys-btn:disabled { opacity: .55; cursor: progress; }
+.ys-header .ys-btn { background: var(--ys-night); }
+
+.ys-warn { background: #fdf3e2; border-left: 4px solid var(--ys-amber); padding: 8px 12px; border-radius: 6px; }
+.ys-warn-text { color: #8a5a0b; }
+.ys-ok { background: #e3f4ea; color: var(--ys-ok); padding: 8px 12px; border-radius: 6px; }
+
+.ys-form { display: flex; flex-direction: column; gap: 12px; }
+.ys-form fieldset, fieldset.ys-approval { border: 1px solid var(--ys-border); border-radius: 8px; padding: 10px 14px 14px; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.ys-form legend { font-weight: 600; padding: 0 6px; color: var(--ys-slate); font-size: 14px; }
+fieldset.ys-approval { border-color: var(--ys-amber); background: #fffaf1; }
+.ys-row { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.ys-row.filters { margin-bottom: 14px; }
+.ys-row > .ys-field { flex: 1 1 150px; }
+.ys-field { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.ys-field > span { color: var(--ys-slate); }
+.ys-field small { font-size: 12px; }
+.ys-field input, .ys-field select, .ys-field textarea, .ys-page-head select, .ys-table select {
+  font: inherit; padding: 8px 10px; min-height: 40px; border: 1px solid var(--ys-border); border-radius: 8px; background: #fff; color: var(--ys-night);
+}
+.ys-table select { min-height: 34px; padding: 4px 8px; }
+.ys-field input[readonly] { background: var(--ys-bg); }
+.ys-check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.ys-check input { width: 18px; height: 18px; accent-color: var(--ys-teal); }
+.ys-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.ys-tenders { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.ys-tenders .ys-row { width: 100%; }
+.ys-room-line { border-bottom: 1px dashed var(--ys-border); padding-bottom: 8px; }
+.ys-room-line p { margin: 6px 0 0; font-size: 14px; }
+.ys-results { list-style: none; margin: 0; padding: 0; border: 1px solid var(--ys-border); border-radius: 8px; max-height: 220px; overflow: auto; }
+.ys-results button { display: block; width: 100%; text-align: left; font: inherit; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--ys-border); background: #fff; cursor: pointer; }
+.ys-results button:hover { background: var(--ys-teal-050); }
+.ys-docs, .ys-notes { margin: 0; padding-left: 18px; }
+.ys-docs li, .ys-notes li { margin: 4px 0; }
+
+.ys-modal-backdrop { position: fixed; inset: 0; background: rgba(11, 46, 49, .55); display: grid; place-items: start center; padding: 6vh 16px; overflow: auto; z-index: 20; }
+.ys-modal { width: 100%; max-width: 560px; background: var(--ys-surface); border-radius: 14px; padding: 20px 22px; box-shadow: 0 20px 50px rgba(0, 0, 0, .25); }
+.ys-modal.wide { max-width: 860px; }
+.ys-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.ys-modal-head h2 { margin: 0; font-size: 20px; }
+
+.ys-segmented { display: inline-flex; border: 1px solid var(--ys-border); border-radius: 8px; overflow: hidden; }
+.ys-segmented button { font: inherit; padding: 8px 14px; border: 0; background: #fff; color: var(--ys-teal); cursor: pointer; }
+.ys-segmented button[aria-pressed='true'] { background: var(--ys-teal); color: #fff; }
+
+/* Status badges: stays, rooms, payments, requests */
+.ys-badge.st-confirmed, .ys-badge.st-clean, .ys-badge.st-inspected, .ys-badge.st-done, .ys-badge.st-open { background: #e3f4ea; color: var(--ys-ok); }
+.ys-badge.st-checked_in { background: var(--ys-teal); color: #fff; }
+.ys-badge.st-hold, .ys-badge.st-enquiry, .ys-badge.st-pending, .ys-badge.st-in_progress, .ys-badge.st-late, .ys-badge.st-high, .ys-badge.st-mixed { background: #fdf3e2; color: #8a5a0b; }
+.ys-badge.st-dirty, .ys-badge.st-cancelled, .ys-badge.st-no_show, .ys-badge.st-failed, .ys-badge.st-urgent, .ys-badge.st-blocked { background: #fde8e6; color: var(--ys-danger); }
+.ys-badge.st-checked_out, .ys-badge.st-closed, .ys-badge.st-low, .ys-badge.st-negotiated { background: #eef1f1; color: var(--ys-slate); }
+
+/* Availability calendar */
+.ys-cal-wrap { overflow-x: auto; background: var(--ys-surface); border: 1px solid var(--ys-border); border-radius: var(--ys-radius); }
+table.ys-cal { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.ys-cal th, .ys-cal td { border: 1px solid var(--ys-border); padding: 4px 6px; white-space: nowrap; }
+.ys-cal thead th { position: sticky; top: 0; background: var(--ys-bg); font-weight: 600; }
+.ys-cal thead th span { color: var(--ys-slate); font-weight: 400; }
+.ys-cal thead th.today { background: var(--ys-teal); color: #fff; }
+.ys-cal thead th.today span { color: var(--ys-mist); }
+.ys-cal tbody th { width: 1%; text-align: left; position: sticky; left: 0; background: var(--ys-surface); font-weight: 600; }
+.ys-cal td { min-width: 34px; text-align: center; }
+.ys-cal td.cell { cursor: pointer; overflow: hidden; text-overflow: ellipsis; max-width: 120px; text-align: left; }
+.ys-cal-type td { color: var(--ys-slate); background: var(--ys-bg); }
+.ys-cal-type td.full { color: var(--ys-danger); font-weight: 600; }
+.cell.free { background: #fff; }
+.cell.free:hover { background: var(--ys-teal-050); }
+.cell.reserved { background: #cfe3e4; }
+.cell.hold { background: #fbe6c2; }
+.cell.occupied { background: var(--ys-teal); color: #fff; }
+.cell.departed { background: #e5eaea; color: var(--ys-slate); }
+.cell.blocked { background: repeating-linear-gradient(45deg, #fde8e6, #fde8e6 4px, #f8d3cf 4px, #f8d3cf 8px); color: var(--ys-danger); }
+.cell.arrival { border-left: 3px solid var(--ys-amber); }
+.ys-legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; margin: 0; font-size: 13px; }
+.ys-legend .cell { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--ys-border); }
+
 @media (max-width: 760px) {
   .ys-layout { grid-template-columns: 1fr; }
   .ys-nav { display: flex; gap: 4px; overflow-x: auto; padding: 8px; }
   .ys-nav button { width: auto; white-space: nowrap; }
+  .ys-main { padding: 16px; }
+  .ys-header { flex-wrap: wrap; }
+  .ys-table { display: block; overflow-x: auto; }
 }

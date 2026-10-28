@@ -89,6 +89,13 @@ export class Money {
     return Money.of(this.value.times(toDecimal(factor)).toFixed(), this.currency);
   }
 
+  /** Divides by a decimal string (e.g. "1.18" to take tax out of an inclusive price). */
+  divide(divisor: string | bigint | number): Money {
+    const d = toDecimal(divisor);
+    if (d.isZero()) throw new MoneyError('Division by zero');
+    return Money.of(this.value.dividedBy(d).toFixed(), this.currency);
+  }
+
   negate(): Money {
     return Money.of(this.value.negated().toFixed(), this.currency);
   }

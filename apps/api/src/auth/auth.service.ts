@@ -64,6 +64,23 @@ export class AuthService {
     return row && row.is_active ? this.toAuthUser(row) : undefined;
   }
 
+  /**
+   * Checks another user's credentials for an approval (SEC-02) without issuing a
+   * token. Failures are audited like failed logins.
+   */
+  async verifyCredentials(username: string, password: string): Promise<AuthUser | undefined> {
+    const row = await this.findUser('username', username);
+    const ok = await verifyPassword(password, row?.password_hash ?? (await this.dummyHash));
+    if (!row || !ok || !row.is_active) {
+      await this.audit.record(
+        { action: 'auth.approval_failed', entityType: 'user', entityId: row?.id ?? null, newValues: { username } },
+        SYSTEM_SCOPE,
+      );
+      return undefined;
+    }
+    return this.toAuthUser(row);
+  }
+
   async login(username: string, password: string): Promise<{ accessToken: string; user: AuthUser }> {
     const row = await this.findUser('username', username);
     const ok = await verifyPassword(password, row?.password_hash ?? (await this.dummyHash));
