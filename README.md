@@ -66,7 +66,7 @@ The worker posts it to the mock; check **SAP postings** in the back office or `G
 npm test          # all workspaces
 ```
 
-API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 130 tests across the workspaces, 87 of them API tests against the database, covering the front desk acceptance tests (AT-01, AT-05, AT-08, AT-09, AT-18), booking lifecycle, holds, amendments, deposits and fees, approvals, folio and payments, RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
+API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 131 tests across the workspaces, 88 of them API tests against the database, covering the front desk acceptance tests (AT-01, AT-05, AT-08, AT-09, AT-18), booking lifecycle, holds, amendments, deposits and fees, approvals, folio and payments, RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
 
 ## Dev and test stacks on EC2 (t4g.large, af-south-1)
 

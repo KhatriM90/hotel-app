@@ -57,6 +57,13 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
   });
 
   describe('test master data (CFG-02, RES-05)', () => {
+    it('runs every property on an 08:00 to 08:00 business day', async () => {
+      for (const code of ['K1', 'SW', 'KM']) {
+        const res = await api('owner').get(`/api/properties/${code}`).expect(200);
+        expect(res.body.businessDayCutoff).toBe('08:00');
+      }
+    });
+
     it('seeds 13 rooms at K1, 42 at Small World and 32 at Kahama', async () => {
       for (const [code, n] of [['K1', 13], ['SW', 42], ['KM', 32]] as const) {
         const res = await api('owner').get(`/api/properties/${code}/rooms`).expect(200);

@@ -101,6 +101,7 @@ Migrations `0010`–`0012`; API in `apps/api/src/frontoffice`; reception screens
 - **Charge prices include VAT 16% and catering levy 2%** (confirmed by Manish Khatri, 28 Oct 2026). Each is calculated on the net amount; any rounding cent goes to the larger tax. Rounding is still to be signed off by the accountant (BIL-08).
 - **Deposits before arrival are payments on the stay's folio**, flagged as deposits. They reduce the balance once confirmed and are marked as applied at check-in.
 - **Checkout on the arrival day charges one night** (confirmed by Manish Khatri, 28 Oct 2026); leaving early on later days charges the nights up to today and shortens the stay.
+- **Business day runs 08:00 to 08:00** for all three properties (confirmed by Manish Khatri, 28 Oct 2026; migration `0013`). Sales between midnight and 08:00 belong to the previous business date. POS day close and the full night audit (BIL-10) will use this cut-off.
 - **Seeded rates, policies, room numbers and guests are test data** for this module, not the client's real tariff.
 
 ## Not yet satisfied (everything else)
