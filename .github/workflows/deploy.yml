@@ -1,0 +1,50 @@
+name: Deploy
+
+# Deploys to the EC2 host over SSH by running deploy/scripts/deploy.sh there.
+# Needs repository secrets EC2_HOST, EC2_USER, EC2_SSH_KEY (private key) and EC2_KNOWN_HOSTS
+# (output of `ssh-keyscan -t ed25519 <host>`), and a checkout at ~/hotel-app on the instance.
+# Pushes to main deploy dev only when the repository variable AUTO_DEPLOY_DEV is "true".
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which stack to deploy
+        type: choice
+        options: [dev, test, all]
+        default: dev
+      ref:
+        description: Branch, tag or commit to deploy
+        default: main
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || vars.AUTO_DEPLOY_DEV == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Configure SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Run deploy script on the instance
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          TARGET: ${{ inputs.target || 'dev' }}
+          REF: ${{ inputs.ref || github.sha }}
+        run: |
+          [[ "$TARGET" =~ ^(dev|test|all)$ ]] || { echo "bad target"; exit 1; }
+          [[ "$REF" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "bad ref"; exit 1; }
+          ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes -o ServerAliveInterval=30 "$EC2_USER@$EC2_HOST" \
+            "cd ~/hotel-app && DEPLOY_REF='$REF' deploy/scripts/deploy.sh '$TARGET'"

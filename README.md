@@ -16,7 +16,7 @@ This repository holds the **foundation** (monorepo, database schema and guards, 
 | `apps/sap-worker` | Integration worker that runs at K1 HQ beside SAP. Pulls from the cloud over outbound HTTPS and posts via Service Layer. |
 | `apps/sap-sl-mock` | In-memory SAP B1 Service Layer (`/b1s/v2`) mock with fault injection, used until the client's SAP test company exists. |
 | `packages/shared` | Decimal `Money`, property codes, document numbering format, roles and permissions, stay lifecycle, nightly pricing, tax split and deposit/cancellation rules. |
-| `deploy/` | Compose stacks for dev/test on EC2, edge Caddy, env templates. |
+| `deploy/` | Compose stacks for dev/test on EC2, edge Caddy, env templates, bootstrap and deploy scripts. |
 | `docs/` | Traceability, brand pack, screenshots. |
 
 ## Run locally
@@ -69,6 +69,8 @@ npm test          # all workspaces
 API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 131 tests across the workspaces, 88 of them API tests against the database, covering the front desk acceptance tests (AT-01, AT-05, AT-08, AT-09, AT-18), booking lifecycle, holds, amendments, deposits and fees, approvals, folio and payments, RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
 
 ## Dev and test stacks on EC2 (t4g.large, af-south-1)
+
+Step-by-step runbook (instance launch, DNS, first deploy, redeploys, backups): **[docs/deploy-ec2.md](docs/deploy-ec2.md)**. In short, on a fresh Ubuntu 24.04 ARM instance with the repo cloned: `sudo bash deploy/scripts/bootstrap-ec2.sh`, then `ACME_EMAIL=you@example.com deploy/scripts/deploy.sh`. The manual equivalent is below.
 
 All images are multi-arch (`node:22-alpine`, `postgres:16-alpine`, `redis:7.4-alpine`, `caddy:2.10-alpine`) and build natively on ARM64.
 
