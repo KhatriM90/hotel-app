@@ -165,7 +165,9 @@ export class PosSettlementService {
       [check.id, settlement, actorId()],
     );
     await event(q, check.propertyId, check.id, 'closed', { settlement, total: t.total });
-    if (settlement === 'payment') await this.enqueueSapSale(q, check);
+    // The paid part goes to SAP now; a room-charged part follows with the folio
+    // and a house-account part is not revenue, so each shilling is invoiced once.
+    if (!Money.of(t.paid).isZero()) await this.enqueueSapSale(q, check, t);
     return true;
   }
 
@@ -176,10 +178,12 @@ export class PosSettlementService {
 
   /**
    * Immediate-payment sales go to SAP as an A/R invoice plus an incoming
-   * payment (brief §13 recommended start; SAP-04, SAP-05). Room-charged checks
-   * are invoiced with the folio at checkout, so a sale is never invoiced twice.
+   * payment (brief §13 recommended start; SAP-04, SAP-05). Room-charged parts
+   * are invoiced with the folio at checkout, so a sale is never invoiced twice:
+   * on a mixed check only the paid share is invoiced here, spread over the items
+   * the same way the room charge spreads the rest (AT-07).
    */
-  private async enqueueSapSale(q: Queryable, check: LockedCheck): Promise<void> {
+  private async enqueueSapSale(q: Queryable, check: LockedCheck, t: Totals): Promise<void> {
     const outlet = await outletById(q, check.outletId);
     const { rows: lines } = await q.query<{ name: string; quantity: string; amount: string; sapItemCode: string | null; chargeCode: string; vat: string | null }>(
       `SELECT l.name, l.quantity::text AS quantity, l.amount, mi.sap_item_code AS "sapItemCode", l.charge_code AS "chargeCode",
@@ -189,6 +193,8 @@ export class PosSettlementService {
       [check.id],
     );
     if (!lines.length) return;
+    const whole = Money.of(t.paid).equals(t.total);
+    const shares = whole ? lines.map((l) => l.amount) : spreadOverLines(t.paid, lines.map((l) => l.amount));
     await this.outbox.enqueue({
       propertyId: check.propertyId,
       eventType: 'AR_INVOICE',
@@ -199,15 +205,16 @@ export class PosSettlementService {
         docDate: check.businessDate,
         currency: 'KES',
         folioNumber: null,
-        lines: lines.map((l) => {
+        lines: lines.flatMap((l, i) => {
+          if (Money.of(shares[i]).isZero()) return [];
           const unit = Money.of(l.amount).divide(l.quantity);
-          const exact = unit.multiply(l.quantity).equals(l.amount);
+          const exact = whole && unit.multiply(l.quantity).equals(l.amount);
           return {
             // Non-inventory sales items per tax category until the SAP item mapping is signed off (SAP-03).
             itemCode: l.sapItemCode ?? `POS-${l.chargeCode}`,
-            description: exact ? l.name : `${Number(l.quantity)} × ${l.name}`,
+            description: exact ? l.name : `${Number(l.quantity)} × ${l.name}${whole ? '' : ' (paid part)'}`,
             quantity: exact ? l.quantity : '1',
-            unitPriceInclTax: exact ? unit.toString() : l.amount,
+            unitPriceInclTax: exact ? unit.toString() : shares[i],
             taxCode: l.vat ?? 'TBC',
             revenueCentre: outlet.revenueCentre,
             dimension2Code: outlet.sapDimension2Code,

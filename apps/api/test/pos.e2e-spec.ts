@@ -558,14 +558,25 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
       // Charged once: a second attempt is refused.
       await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: stay.id, acknowledgement: ack }).expect(409);
 
-      // Revenue once: the outlet's sales are the check, settled by M-PESA plus the room charge; no SAP sale for a room-charged check.
+      // Revenue once: the outlet's sales are the check, settled by M-PESA plus the room charge. SAP gets only the
+      // M-PESA share now (the room share is invoiced with the folio), and the two shares add up to each line.
       const today = c.businessDate;
       const sales = await api('sw.manager').get(`${SWPOS}/reports/sales?from=${today}&to=${today}&outlet=SW-KITCHEN`).expect(200);
       expect(sales.body.reconciliation.difference).toBe('0.00');
       const owner = await ownerClient();
       try {
-        const { rowCount } = await owner.query(`SELECT 1 FROM integration_outbox WHERE external_ref = $1`, [c.number]);
-        expect(rowCount).toBe(0);
+        const { rows } = await owner.query(`SELECT event_type, payload FROM integration_outbox WHERE external_ref IN ($1, $2) ORDER BY event_type`, [
+          c.number,
+          `${c.number}-PAY`,
+        ]);
+        expect(rows.map((r) => r.event_type)).toEqual(['AR_INVOICE', 'INCOMING_PAYMENT']);
+        const invoiced = rows[0].payload.lines as Array<{ unitPriceInclTax: string; quantity: string; description: string }>;
+        expect(invoiced.reduce((a, l) => a + Number(l.unitPriceInclTax) * Number(l.quantity), 0)).toBeCloseTo(1000, 2);
+        expect(invoiced.every((l) => l.description.endsWith('(paid part)'))).toBe(true);
+        expect(rows[1].payload).toMatchObject({ transferSum: '1000.00' });
+        for (const [i, l] of invoiced.entries()) {
+          expect(Number(l.unitPriceInclTax) + Number(posCharges[i].amount)).toBeCloseTo(Number(res.body.lines[i].amount), 2);
+        }
       } finally {
         await owner.end();
       }
