@@ -10,6 +10,7 @@
     "migrate": "node dist/db/migrate.js",
     "migrate:dev": "npm run build && node dist/db/migrate.js",
     "seed": "node dist/seed.js",
+    "demo": "node dist/seed-demo.js",
     "test": "jest --runInBand"
   },
   "dependencies": {
