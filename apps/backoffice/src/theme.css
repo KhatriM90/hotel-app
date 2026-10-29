@@ -39,6 +39,7 @@ h1, h2, h3 { font-family: var(--ys-font-heading); font-weight: 600; margin: 0 0 
   background: var(--ys-night); color: #fff; min-height: 36px;
 }
 .ys-user { color: var(--ys-mist); font-size: 14px; }
+.ys-header a.ys-link { color: var(--ys-amber); text-decoration: underline; }
 
 .ys-layout { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100% - 56px); }
 .ys-nav { background: var(--ys-night); padding: 16px 8px; }

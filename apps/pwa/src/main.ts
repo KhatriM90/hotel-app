@@ -47,6 +47,9 @@ const MODE_KEY = 'yeastay.pwa.mode';
 const roles = () => api.session?.user.roles ?? [];
 const canSell = () => roles().some((r) => ['owner', 'area_manager', 'manager', 'cashier', 'waiter', 'bartender'].includes(r));
 const canStation = () => roles().some((r) => ['owner', 'area_manager', 'manager', 'kitchen', 'bartender'].includes(r));
+// Front desk, reservations, POS reports and SAP postings live in the back office at the site root, not in this tablet app.
+const canBackOffice = () => roles().some((r) => !['waiter', 'bartender', 'kitchen'].includes(r));
+const canHousekeeping = () => roles().some((r) => ['owner', 'admin', 'manager', 'receptionist', 'housekeeper'].includes(r));
 
 function renderWho() {
   const s = api.session;
@@ -105,16 +108,24 @@ function chooseMode(property: string) {
   const modes = [
     canSell() ? '<button class="mode" data-mode="waiter"><strong>Waiter / bar POS</strong><span>Tables, tabs, orders, bills and payments</span></button>' : '',
     canStation() ? '<button class="mode" data-mode="station"><strong>Kitchen / bar tickets</strong><span>Orders to prepare, bump when ready</span></button>' : '',
-    '<button class="mode" data-mode="housekeeping"><strong>Housekeeping</strong><span>Room board and cleaning tasks (coming with HK-01 to HK-04)</span></button>',
+    canHousekeeping() ? '<button class="mode soon" data-mode="housekeeping"><strong>Housekeeping</strong><span>Not built yet (HK-01 to HK-04)</span></button>' : '',
+    canBackOffice() ? '<a class="mode" href="/"><strong>Back office ›</strong><span>Front desk, reservations, rooms, POS day close and sales, SAP postings</span></a>' : '',
   ];
   main.innerHTML = `<h1>Choose a mode</h1><div class="modes">${modes.join('')}</div>`;
   main.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
     b.addEventListener('click', () => {
-      if (b.dataset.mode === 'housekeeping') return;
+      if (b.dataset.mode === 'housekeeping') return housekeepingSoon(property);
       localStorage.setItem(MODE_KEY, b.dataset.mode!);
       void (b.dataset.mode === 'waiter' ? chooseOutlet(property) : chooseStation(property)).catch(showError);
     }),
   );
+}
+
+function housekeepingSoon(property: string) {
+  main.innerHTML = `<div class="bar"><button class="ghost" data-back>‹ Modes</button><h1>Housekeeping</h1></div>
+    <div class="card notice"><p><strong>Not built yet.</strong> The room board and cleaning tasks for housekeeping phones come with HK-01 to HK-04.</p>
+    <p>Until then, room status is shown in the back office under Front desk and Rooms.</p></div>`;
+  main.querySelector('[data-back]')!.addEventListener('click', () => chooseMode(property));
 }
 
 async function chooseOutlet(property: string) {
