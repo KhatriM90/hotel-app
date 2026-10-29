@@ -235,6 +235,7 @@ export function App() {
         )}
         {property && <span className="ys-user">Business date {property.currentBusinessDate}</span>}
         <span className="ys-user">{me.displayName}</span>
+        <a className="ys-user ys-link" href="/pwa/">Tablet app (POS, kitchen)</a>
         <button className="ys-btn" onClick={() => { api.logout(); setMe(null); }}>Sign out</button>
       </header>
       <div className="ys-layout">

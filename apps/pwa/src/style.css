@@ -76,6 +76,9 @@ legend { font-weight: 600; padding: 0 6px; }
 .mode.last { outline: 3px solid var(--ys-amber); }
 .mode strong { display: block; font-size: 21px; margin-bottom: 6px; }
 .mode span { color: var(--text-dim); }
+a.mode { text-decoration: none; box-sizing: border-box; }
+.mode.soon { opacity: 0.6; border-bottom-color: var(--line-dark); }
+.card.notice { max-width: 560px; line-height: 1.5; }
 
 .bar, .screen-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .banner { background: #3a2f12; border: 1px solid var(--ys-amber); color: #ffe2a8; border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; }
