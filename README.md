@@ -48,6 +48,12 @@ CLOUD_API_URL=http://localhost:3000/api WORKER_TOKEN=$WORKER_TOKEN \
 
 Properties, SAP branch IDs, tax codes, the 43 outlets and 51 SAP warehouses come from migrations. The seed adds demo users and **test data for the front desk**: room types, rooms (13 at K1, 42 at Small World, 32 at Kahama), rack, seasonal and negotiated rates, booking policies, two companies and six guests; and **test data for the POS**: a sample group menu with outlet prices, kitchen and bar stations, tables, placeholder alcohol hours, house accounts and a happy hour. It is safe to run again and does not overwrite a policy someone has edited. Seeded users (password = `SEED_PASSWORD`): `admin`, `owner`, `group.accounts` (all properties), `k1.manager`, `k1.reception`, `k1.cashier`, `k1.waiter`, `k1.bartender`, `k1.kitchen`, `sw.manager`, `sw.reception`, `sw.waiter`, `km.manager`, `km.reception`, `km.waiter`.
 
+**Demo data** (bookings, in-house guests, folios, open tables, paid bills, cash shifts, a Z report and more at all three properties, dated around today) is a separate step that runs against the running API, so everything goes through the app's own rules. See **[docs/demo-data.md](docs/demo-data.md)** for what it creates and where to see each scenario.
+
+```bash
+API_URL=http://localhost:3000/api SEED_PASSWORD=dev-password-123 npm run db:demo
+```
+
 Try the SAP flow end to end: sign in as `admin`, then
 
 ```bash
@@ -66,7 +72,7 @@ The worker posts it to the mock; check **SAP postings** in the back office or `G
 npm test          # all workspaces
 ```
 
-API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 176 tests across the workspaces, 117 of them API tests against the database, covering the front desk acceptance tests (AT-01, AT-05, AT-08, AT-09, AT-18), the POS acceptance tests (AT-02, AT-03, AT-07, AT-09, AT-10, AT-13, AT-14, AT-18), charge to room, cash shifts, day close, offline replay, booking lifecycle, holds, amendments, deposits and fees, approvals, folio and payments, RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, and the worker against the Service Layer mock (SAP-AT04/05/06, session expiry).
+API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 182 tests across the workspaces, 123 of them API tests against the database, covering the front desk acceptance tests (AT-01, AT-05, AT-08, AT-09, AT-18), the POS acceptance tests (AT-02, AT-03, AT-07, AT-09, AT-10, AT-13, AT-14, AT-18), charge to room, cash shifts, day close, offline replay, booking lifecycle, holds, amendments, deposits and fees, approvals, folio and payments, RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, the worker against the Service Layer mock (SAP-AT04/05/06, session expiry), and the demo seed on a database of its own.
 
 ## Dev and test stacks on EC2 (t4g.large, af-south-1)
 

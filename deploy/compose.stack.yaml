@@ -64,6 +64,24 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
 
+  # Demo data for walkthroughs (docs/demo-data.md). Runs against the API, so the api service must be up:
+  #   docker compose -p hotel-test --env-file deploy/env/test.env -f deploy/compose.stack.yaml --profile demo run --rm demo
+  demo:
+    <<: *node-service
+    restart: "no"
+    build: { <<: *build, target: api }
+    image: yeastay/api:${IMAGE_TAG:-local}
+    profiles: ["demo"]
+    command: ["node", "dist/seed-demo.js"]
+    environment:
+      API_URL: http://api:3000/api
+      SEED_PASSWORD: ${SEED_PASSWORD:-}
+      DEMO_HISTORY: ${DEMO_HISTORY:-auto}
+      DEMO_FORCE: ${DEMO_FORCE:-}
+      DEMO_PROPERTIES: ${DEMO_PROPERTIES:-K1,SW,KM}
+    depends_on:
+      api: { condition: service_healthy }
+
   api:
     <<: *node-service
     build: { <<: *build, target: api }

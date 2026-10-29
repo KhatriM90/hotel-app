@@ -20,6 +20,7 @@
     "test": "npm run test --workspaces --if-present",
     "db:migrate": "npm run migrate -w @hotel/api",
     "db:seed": "npm run seed -w @hotel/api",
+    "db:demo": "npm run demo -w @hotel/api",
     "dev:api": "npm run dev -w @hotel/api",
     "dev:backoffice": "npm run dev -w @hotel/backoffice",
     "dev:pwa": "npm run dev -w @hotel/pwa",

@@ -64,6 +64,18 @@ The first run builds every image (about 10 to 15 minutes on a t4g.large), create
 
 Demo users on both stacks: `admin`, `owner`, `group.accounts` (all properties), `k1.manager`, `k1.reception`, `k1.waiter`, `sw.reception`, `km.reception`. They share the stack's `SEED_PASSWORD`. Each stack has a different password, so give the customer only the test one.
 
+### Demo data (optional)
+
+To fill a stack with demo bookings, guests, folios and POS activity for a walkthrough (see [demo-data.md](demo-data.md)), back up its database first, then run the `demo` profile against the running API:
+
+```bash
+S="docker compose -p hotel-test --env-file deploy/env/test.env -f deploy/compose.stack.yaml"
+$S exec -T postgres pg_dump -U hotel_owner -Fc hotel > ~/backups/test-before-demo-$(date +%F-%H%M).dump
+$S --profile demo run --rm demo
+```
+
+It prints one line per scenario. Running it again on the same business date changes nothing.
+
 ## 5. Redeploy after changes
 
 ```bash
