@@ -9,12 +9,14 @@ import { GuestPage, GuestsPage } from './frontdesk/Guests';
 import { RequestsPage } from './frontdesk/Requests';
 import { NewReservationPage, ReservationDetailPage, ReservationsPage } from './frontdesk/Reservations';
 import { RatesPage, RoomsPage } from './frontdesk/Rooms';
+import { CashbackPage, LoyaltyMemberPage, LoyaltyMembersPage, LoyaltyProgrammePage, LoyaltyReportsPage } from './loyalty/Loyalty';
 import { PosDaysPage, PosMenuPage, PosSalesPage, PosSettingsPage, PosShiftsPage } from './pos/Pos';
 
 type Page =
   | 'desk' | 'calendar' | 'reservations' | 'new-reservation' | 'reservation' | 'folio'
   | 'guests' | 'guest' | 'requests' | 'rooms' | 'rates'
   | 'pos-days' | 'pos-sales' | 'pos-shifts' | 'pos-menu' | 'pos-settings'
+  | 'loyalty-members' | 'loyalty-member' | 'loyalty-programme' | 'loyalty-cashback' | 'loyalty-reports'
   | 'overview' | 'outlets' | 'integration';
 
 /** Main navigation; each entry shows only for users holding its permission (the API enforces the same, SEC-01). */
@@ -31,6 +33,10 @@ const NAV: Array<[Page, string, Permission?]> = [
   ['pos-shifts', 'Cash shifts', 'pos.report'],
   ['pos-menu', 'Menus and prices', 'pos.menu.read'],
   ['pos-settings', 'Business day and POS', 'pos.report'],
+  ['loyalty-members', 'Loyalty members', 'loyalty.lookup'],
+  ['loyalty-programme', 'Loyalty programme', 'loyalty.read'],
+  ['loyalty-cashback', 'Club cashback', 'loyalty.finance'],
+  ['loyalty-reports', 'Loyalty reports', 'loyalty.report'],
   ['overview', 'Properties'],
   ['outlets', 'Outlets'],
   ['integration', 'SAP postings'],
@@ -211,7 +217,7 @@ export function App() {
   const nav = NAV.filter(([, , perm]) => !perm || hasPermission(me.roles, perm));
   const { page, params } = route;
   const section: Page =
-    page === 'new-reservation' || page === 'reservation' || page === 'folio' ? 'reservations' : page === 'guest' ? 'guests' : page;
+    page === 'new-reservation' || page === 'reservation' || page === 'folio' ? 'reservations' : page === 'guest' ? 'guests' : page === 'loyalty-member' ? 'loyalty-members' : page;
 
   return (
     <>
@@ -268,6 +274,11 @@ export function App() {
               {page === 'pos-shifts' && <PosShiftsPage key={current} />}
               {page === 'pos-menu' && <PosMenuPage key={current} />}
               {page === 'pos-settings' && <PosSettingsPage key={current} />}
+              {page === 'loyalty-members' && <LoyaltyMembersPage key={current} />}
+              {page === 'loyalty-member' && params.id && <LoyaltyMemberPage key={current + params.id} id={params.id} />}
+              {page === 'loyalty-programme' && <LoyaltyProgrammePage />}
+              {page === 'loyalty-cashback' && <CashbackPage />}
+              {page === 'loyalty-reports' && <LoyaltyReportsPage />}
             </SessionContext.Provider>
           )}
         </main>

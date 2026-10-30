@@ -91,7 +91,8 @@ export class LoyaltyMembersController {
 
   @Get('members')
   @RequirePermission('loyalty.lookup')
-  lookup(@Query('q') q = '') {
+  lookup(@Query('q') q = '', @Query('guestId') guestId?: string) {
+    if (guestId && /^[0-9a-f-]{36}$/i.test(guestId)) return this.members.byGuest(guestId);
     return this.members.lookup(q);
   }
 
@@ -180,7 +181,6 @@ export class LoyaltyMembersController {
 
   @Put('members/:memberId/club')
   @RequirePermission('loyalty.club.manage')
-  @Idempotent()
   club(@CurrentProperty() p: CurrentPropertyT, @Param('memberId', ParseUUIDPipe) id: string, @Body(new ZodPipe(Club)) b: Body<typeof Club>) {
     return this.members.setClub(p.id, id, b);
   }
@@ -221,7 +221,6 @@ export class LoyaltyCheckController {
 
   @Put('member')
   @RequirePermission('loyalty.lookup')
-  @Idempotent()
   attach(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string, @Body(new ZodPipe(AttachMember)) b: Body<typeof AttachMember>) {
     return this.db.tx(async (q) => {
       await this.checkout.attach(q, p.id, id, b.memberId);
@@ -231,7 +230,6 @@ export class LoyaltyCheckController {
 
   @Put('benefit')
   @RequirePermission('loyalty.lookup')
-  @Idempotent()
   benefit(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string, @Body(new ZodPipe(Benefit)) b: Body<typeof Benefit>) {
     return this.db.tx(async (q) => {
       await this.checkout.setBenefit(q, p.id, id, b.benefit);
@@ -289,7 +287,6 @@ export class LoyaltyAdminController {
 
   @Put('programme/tiers/:code')
   @RequirePermission('loyalty.programme')
-  @Idempotent()
   tierRate(@Param('code') code: string, @Body(new ZodPipe(TierRate)) b: Body<typeof TierRate>) {
     return this.programme.setTierRate(code, b);
   }

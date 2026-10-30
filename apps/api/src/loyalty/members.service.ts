@@ -175,6 +175,19 @@ export class LoyaltyMembersService {
     });
   }
 
+  /** The member record of a guest profile, if any (reception's guest page). */
+  async byGuest(guestId: string) {
+    return this.db.tx(async (q) => {
+      const { rows } = await q.query<MemberRow>(
+        `SELECT ${MEMBER_COLUMNS} FROM loyalty_members WHERE guest_id = $1 AND status NOT IN ('merged', 'anonymised')`,
+        [guestId],
+      );
+      const out = [];
+      for (const r of rows) out.push(await this.summary(q, r));
+      return out;
+    });
+  }
+
   /** What the POS needs: identity hidden to a first name and initial, balances and club benefit (LOY15). */
   async summary(q: Queryable, m: MemberRow, cardScanned = false) {
     const full = this.fullAccess();
