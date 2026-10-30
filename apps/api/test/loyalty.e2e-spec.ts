@@ -55,7 +55,7 @@ describe('Loyalty and club (LOY, CLUB, LAT, CAT)', () => {
   /** An open bill with the given test dishes. */
   const bill = async (codes: string[], opts: { property?: string; outlet?: string; user?: string; stayId?: string } = {}) => {
     const property = opts.property ?? 'K1';
-    const outlet = opts.outlet ?? 'K1-KOFFEE';
+    const outlet = opts.outlet ?? 'K1-TANQUERAY';
     const user = opts.user ?? 'k1.waiter';
     const check = (await api(user).post(`/api/properties/${property}/pos/outlets/${outlet}/checks`, { serviceType: 'counter', stayId: opts.stayId ?? null }).expect(201)).body;
     const lines = [];
@@ -104,7 +104,10 @@ describe('Loyalty and club (LOY, CLUB, LAT, CAT)', () => {
     const owner = await ownerClient();
     try {
       await owner.query(
-        `UPDATE pos_outlet_days SET status = 'closed', closed_at = now(), finalised_at = now(), totals = '{"test": true}' WHERE status = 'open'`,
+        // Only this suite's outlets, so the POS suite can still trade at its own outlets today.
+        `UPDATE pos_outlet_days SET status = 'closed', closed_at = now(), finalised_at = now(), totals = '{"test": true}'
+          WHERE status = 'open' AND outlet_id IN (SELECT id FROM outlets WHERE code = ANY($1))`,
+        [['K1-TANQUERAY', 'KM-PITCHER', 'SW-STEVES-CB']],
       );
     } finally {
       await owner.end();
@@ -342,7 +345,7 @@ describe('Loyalty and club (LOY, CLUB, LAT, CAT)', () => {
         })
         .expect(200);
       const m = await enrol('SW', 'sw.reception', { guestId: stay.primaryGuestId });
-      const b = await bill(['LY-PLATTER'], { property: 'SW', outlet: 'SW-KITCHEN', user: 'sw.waiter', stayId: stay.id });
+      const b = await bill(['LY-PLATTER'], { property: 'SW', outlet: 'SW-STEVES-CB', user: 'sw.waiter', stayId: stay.id });
       await attach(b.id, m.id, 'SW', 'sw.waiter');
       await api('sw.waiter')
         .post(`/api/properties/SW/pos/checks/${b.id}/room-charge`, { stayId: stay.id, acknowledgement: { method: 'staff_verified', signedName: 'Loyal Guest' } })

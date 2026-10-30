@@ -79,6 +79,7 @@ services:
       DEMO_HISTORY: ${DEMO_HISTORY:-auto}
       DEMO_FORCE: ${DEMO_FORCE:-}
       DEMO_PROPERTIES: ${DEMO_PROPERTIES:-K1,SW,KM}
+      DEMO_ONLY: ${DEMO_ONLY:-}
     depends_on:
       api: { condition: service_healthy }
 

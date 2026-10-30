@@ -288,6 +288,7 @@ export async function askRedeem(p: Preview): Promise<{ points: number; wallet: s
     'Use points or credit',
     `${r.maxPoints ? `<label>Points (up to ${pts(r.maxPoints)}, worth KSh ${kes(r.maxPointsValue)})<input name="points" type="number" min="0" max="${r.maxPoints}" step="1" value="${r.maxPoints}"></label>` : ''}
      ${Number(r.maxWallet) ? `<label>Wallet credit, KSh (up to ${kes(r.maxWallet)})<input name="wallet" inputmode="decimal" pattern="\\d+(\\.\\d{1,2})?" value="${esc(r.maxWallet)}"></label>` : ''}
+     ${r.ceiling ? `<p class="muted">Benefits ceiling (${Number(r.ceiling.percent)}% of the bill): KSh ${kes(Number(r.ceiling.billRoom) < Number(r.ceiling.monthRoom) ? r.ceiling.billRoom : r.ceiling.monthRoom)} left, including tax.</p>` : ''}
      <p class="muted">Points cover at most ${Number(p.settings.redeemCapPercent)}% of the eligible food and drinks (KSh ${kes(p.eligible?.forRewards)} before tax). Rewards reduce the bill before VAT and levy.</p>`,
     { submit: 'Next: verify member' },
   );
