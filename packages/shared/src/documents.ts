@@ -16,6 +16,7 @@ export const DOCUMENT_TYPES = {
   PROFORMA: 'PF',
   POS_TICKET: 'KOT',
   CASH_SHIFT: 'SFT',
+  POS_RETURN: 'RT',
 } as const;
 
 export type DocumentType = keyof typeof DOCUMENT_TYPES;

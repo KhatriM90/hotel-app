@@ -2,6 +2,7 @@ import { InjectQueue, Processor, WorkerHost, BullModule } from '@nestjs/bullmq';
 import { DynamicModule, Injectable, Logger, Module, OnApplicationBootstrap } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { IntegrationModule } from '../integration/integration.module';
+import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { MaintenanceService } from './maintenance.service';
 
 export const MAINTENANCE_QUEUE = 'maintenance';
@@ -14,9 +15,9 @@ export class MaintenanceProcessor extends WorkerHost {
     super();
   }
 
-  async process(): Promise<{ releasedClaims: number; purgedKeys: number; expiredHolds: number }> {
+  async process() {
     const result = await this.maintenance.tick();
-    if (result.releasedClaims || result.purgedKeys || result.expiredHolds) this.logger.log(JSON.stringify(result));
+    if (Object.values(result).some(Boolean)) this.logger.log(JSON.stringify(result));
     return result;
   }
 }
@@ -54,6 +55,7 @@ export class MaintenanceModule {
         }),
         BullModule.registerQueue({ name: MAINTENANCE_QUEUE }),
         IntegrationModule,
+        LoyaltyModule,
       ],
       providers: [MaintenanceService, MaintenanceProcessor, MaintenanceScheduler],
     };

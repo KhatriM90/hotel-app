@@ -106,9 +106,21 @@ describe('demo data (seed-demo)', () => {
     expect(Number(sales.houseAccounts.total)).toBeGreaterThan(0);
   });
 
+  it('adds the four loyalty demo members at each property with their opening balances', async () => {
+    const loyalty = report.results.filter((r) => / member /.test(r.scenario));
+    expect(loyalty).toHaveLength(12);
+    const clubAtSw = (await owner.get<Array<{ number: string; points: { available: string }; wallet: { available: string }; club: unknown }>>(
+      '/properties/SW/loyalty/members?q=%2B254755000505',
+    ))[0];
+    expect(clubAtSw).toMatchObject({ points: { available: '1000' }, wallet: { available: '5000.00' }, club: { tier: 'CLUB' } });
+    const regular = (await owner.get<Array<{ points: { available: string } }>>('/properties/KM/loyalty/members?q=%2B254733000303'))[0];
+    expect(regular.points.available).toBe('800');
+  });
+
   it('does nothing when run again on the same date', async () => {
     const again = await runDemo({ apiUrl, password: process.env.SEED_PASSWORD!, today, log: () => undefined });
-    expect(again.results).toEqual([]);
+    // Loyalty members are found again by phone and left as they are.
+    expect(again.results.filter((r) => !/already there/.test(r.detail))).toEqual([]);
     expect(again.skipped.map((s) => s.property)).toEqual(['K1', 'SW', 'KM']);
   });
 });

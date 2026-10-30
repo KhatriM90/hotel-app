@@ -10,6 +10,7 @@ import { FrontOfficeModule } from './frontoffice/frontoffice.module';
 import { HealthModule } from './health/health.controller';
 import { IdempotencyInterceptor } from './idempotency/idempotency';
 import { IntegrationModule } from './integration/integration.module';
+import { LoyaltyModule } from './loyalty/loyalty.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { NumberingModule } from './numbering/numbering.service';
 import { PosModule } from './pos/pos.module';
@@ -44,6 +45,7 @@ export class AppModule implements NestModule {
         IntegrationModule,
         FrontOfficeModule,
         PosModule,
+        LoyaltyModule,
         ...queues,
       ],
       providers: [

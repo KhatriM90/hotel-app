@@ -10,6 +10,7 @@ import {
 } from '@hotel/shared';
 import { AuditService } from '../audit/audit.service';
 import { DbService, Queryable } from '../db/db.service';
+import { LoyaltyCheckoutService } from '../loyalty/checkout.service';
 import { ApprovalsService } from '../frontoffice/approvals.service';
 import { ApprovalInputT, conflict, isPgError, withSavepoint } from '../frontoffice/common';
 import { NumberingService } from '../numbering/numbering.service';
@@ -31,6 +32,8 @@ export interface LockedCheck {
   waiterId: string;
   stayId: string | null;
   status: 'open' | 'closed' | 'void' | 'merged';
+  loyaltyMemberId: string | null;
+  loyaltyBenefit: 'discount' | 'cashback' | null;
 }
 
 interface LineRow {
@@ -77,7 +80,7 @@ export interface AddLinesInput {
 
 const CHECK_COLUMNS = `id, property_id AS "propertyId", number, outlet_id AS "outletId", outlet_day_id AS "outletDayId",
   business_date AS "businessDate", service_type::text AS "serviceType", table_id AS "tableId", tab_name AS "tabName", covers,
-  waiter_id AS "waiterId", stay_id AS "stayId", status`;
+  waiter_id AS "waiterId", stay_id AS "stayId", status, loyalty_member_id AS "loyaltyMemberId", loyalty_benefit AS "loyaltyBenefit"`;
 
 const LINE_COLUMNS = `id, check_id AS "checkId", name, charge_code AS "chargeCode", route, quantity::text AS quantity, unit_price AS "unitPrice",
   modifiers_unit_price AS "modifiersUnitPrice", modifiers, rule_percent::text AS "rulePercent", discount_percent::text AS "discountPercent",
@@ -98,6 +101,7 @@ export class PosChecksService {
     private readonly numbering: NumberingService,
     private readonly approvals: ApprovalsService,
     private readonly audit: AuditService,
+    private readonly loyalty: LoyaltyCheckoutService,
   ) {}
 
   async lock(q: Queryable, propertyId: string, checkId: string, requireOpen = true): Promise<LockedCheck> {
@@ -161,7 +165,9 @@ export class PosChecksService {
               c.device_id AS "deviceId",
               json_build_object('total', tot.total::text, 'tax', tot.tax::text, 'discounts', tot.discounts::text, 'paid', tot.paid::text,
                                 'pending', tot.pending::text, 'roomCharged', tot.room_charged::text, 'houseCharged', tot.house_charged::text,
-                                'refunded', tot.refunded::text, 'balance', tot.balance::text) AS totals
+                                'refunded', tot.refunded::text, 'balance', tot.balance::text, 'memberDiscount', tot.member_discount::text,
+                                'rewards', tot.rewards::text) AS totals,
+              c.loyalty_member_id AS "loyaltyMemberId", c.loyalty_benefit AS "loyaltyBenefit"
          FROM pos_checks c JOIN outlets o ON o.id = c.outlet_id JOIN users u ON u.id = c.waiter_id
          JOIN pos_check_totals tot ON tot.check_id = c.id
          LEFT JOIN pos_tables t ON t.id = c.table_id
@@ -176,7 +182,10 @@ export class PosChecksService {
               l.discount_amount AS "discountAmount", l.discount_reason AS "discountReason", l.is_comp AS "isComp",
               l.amount, l.net_amount AS "netAmount", l.tax_amount AS "taxAmount", l.taxes, l.notes, l.status, l.route, l.is_alcohol AS "isAlcohol",
               l.charge_code AS "chargeCode", tk.number AS "ticketNumber", l.added_at AS "addedAt", l.sent_at AS "sentAt", l.served_at AS "servedAt",
-              l.cancel_reason AS "cancelReason", au.display_name AS "addedBy", l.liquor_override_id IS NOT NULL AS "liquorOverride"
+              l.cancel_reason AS "cancelReason", au.display_name AS "addedBy", l.liquor_override_id IS NOT NULL AS "liquorOverride",
+              l.member_discount_percent::text AS "memberDiscountPercent", l.member_discount_amount AS "memberDiscountAmount",
+              l.reward_amount AS "rewardAmount", l.reward_points AS "rewardPoints", l.reward_wallet AS "rewardWallet",
+              coalesce((SELECT sum(rl.quantity) FROM pos_return_lines rl WHERE rl.line_id = l.id), 0)::text AS "returnedQuantity"
          FROM pos_check_lines l LEFT JOIN pos_tickets tk ON tk.id = l.ticket_id LEFT JOIN users au ON au.id = l.added_by
         WHERE l.check_id = $1 ORDER BY l.added_at, l.id`,
       [checkId],
@@ -204,7 +213,14 @@ export class PosChecksService {
          FROM pos_refunds r LEFT JOIN users u ON u.id = r.created_by WHERE r.check_id = $1 ORDER BY r.created_at`,
       [checkId],
     );
-    return { ...rows[0], lines, payments, roomCharge: roomCharge[0] ?? null, houseAccount: house[0] ?? null, refunds };
+    const { rows: returns } = await q.query(
+      `SELECT r.id, r.number, r.amount, r.reason, r.points_restored AS "pointsRestored", r.points_reversed AS "pointsReversed",
+              r.wallet_restored::text AS "walletRestored", r.created_at AS "createdAt", u.display_name AS "createdBy"
+         FROM pos_returns r LEFT JOIN users u ON u.id = r.created_by WHERE r.check_id = $1 ORDER BY r.created_at`,
+      [checkId],
+    );
+    const loyalty = rows[0].loyaltyMemberId ? await this.loyalty.receipt(q, checkId) : null;
+    return { ...rows[0], lines, payments, roomCharge: roomCharge[0] ?? null, houseAccount: house[0] ?? null, refunds, returns, loyalty };
   }
 
   async events(propertyId: string, checkId: string) {
@@ -351,6 +367,7 @@ export class PosChecksService {
       if (warnings.length) {
         await this.audit.record({ action: 'pos.warning_acknowledged', entityType: 'pos_check', entityId: check.id, propertyId, newValues: { warnings } });
       }
+      await this.loyalty.refreshCheck(q, propertyId, check.id);
       return this.view(q, propertyId, check.id);
     });
   }
@@ -587,6 +604,7 @@ export class PosChecksService {
         });
       }
       for (const l of lines) await this.reprice(q, l, l.quantity, pct.toString(), pct.isZero() ? null : input.reason, approvalId);
+      await this.loyalty.refreshCheck(q, propertyId, check.id);
       await event(q, propertyId, check.id, pct.equals(100) ? 'comped' : 'discounted', { percent: pct.toString(), reason: input.reason, lines: lines.map((l) => l.id) });
       return this.view(q, propertyId, check.id);
     });
@@ -618,6 +636,7 @@ export class PosChecksService {
       const lines = await this.lines(q, check.id, 'id = ANY($2)', [input.lineIds]);
       if (lines.length !== new Set(input.lineIds).size) throw new NotFoundException('Line not found on this check');
       await this.cancelOrWaste(q, check, lines, input.reason, input.approval);
+      await this.loyalty.refreshCheck(q, propertyId, check.id);
       return this.view(q, propertyId, check.id);
     });
   }
@@ -726,7 +745,14 @@ export class PosChecksService {
         if (src.stayId && !target.stayId) await q.query('UPDATE pos_checks SET stay_id = $2 WHERE id = $1', [target.id, src.stayId]);
         await event(q, propertyId, src.id, 'merged_into', { into: target.number, lines: rowCount });
         await event(q, propertyId, target.id, 'merged_from', { from: src.number, lines: rowCount });
+        // The merged bill keeps the target's member, or takes the source's if it had none (LOY12).
+        await this.loyalty.releaseHolds(q, src.id, 'Merged into another bill');
+        if (src.loyaltyMemberId && !target.loyaltyMemberId) {
+          await q.query('UPDATE pos_checks SET loyalty_member_id = $2, loyalty_benefit = $3 WHERE id = $1', [target.id, src.loyaltyMemberId, src.loyaltyBenefit]);
+          target.loyaltyMemberId = src.loyaltyMemberId;
+        }
       }
+      await this.loyalty.refreshCheck(q, propertyId, target.id);
       return this.view(q, propertyId, target.id);
     });
   }
@@ -781,6 +807,10 @@ export class PosChecksService {
         await this.reprice(q, copyRow, m.quantity, m.line.discountPercent, null, null);
         await this.reprice(q, m.line, rest, m.line.discountPercent, null, null);
       }
+      // Both halves keep the member; any reward held is dropped and each bill is re-priced (S06).
+      await q.query('UPDATE pos_checks SET loyalty_member_id = $2, loyalty_benefit = $3 WHERE id = $1', [created.id, check.loyaltyMemberId, check.loyaltyBenefit]);
+      await this.loyalty.refreshCheck(q, propertyId, check.id);
+      await this.loyalty.refreshCheck(q, propertyId, created.id);
       await event(q, propertyId, check.id, 'split', { into: number, lines: moving.map((m) => ({ id: m.line.id, quantity: m.quantity })) });
       await event(q, propertyId, created.id, 'opened', { splitFrom: check.number });
       return { from: await this.view(q, propertyId, check.id), to: await this.view(q, propertyId, created.id) };
@@ -805,6 +835,7 @@ export class PosChecksService {
         `UPDATE pos_checks SET status = 'void', void_reason = $2, void_approval_id = $3, closed_at = now(), closed_by = $4, finalised_at = now() WHERE id = $1`,
         [check.id, input.reason, approvalId, actorId()],
       );
+      await this.loyalty.releaseHolds(q, check.id, 'Bill voided');
       await event(q, propertyId, check.id, 'voided', { reason: input.reason });
       await this.audit.record({ action: 'pos.check_void', entityType: 'pos_check', entityId: check.id, propertyId, reason: input.reason });
       return this.view(q, propertyId, check.id);

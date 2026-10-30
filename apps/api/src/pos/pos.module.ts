@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { FrontOfficeModule } from '../frontoffice/frontoffice.module';
 import { IntegrationModule } from '../integration/integration.module';
+import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { PosChecksService } from './checks.service';
 import { PosDaysService } from './days.service';
 import { PosMenuService } from './menu.service';
@@ -12,7 +13,7 @@ import { PosShiftsService } from './shifts.service';
 
 /** Point of sale for bars, restaurants and kitchens (POS-01 … POS-19, POS day close). */
 @Module({
-  imports: [FrontOfficeModule, IntegrationModule],
+  imports: [FrontOfficeModule, IntegrationModule, LoyaltyModule],
   controllers: [PosController, PosStationsController, PosCashController, PosAdminController, PosMenuController],
   providers: [PosReportsService, PosDaysService, PosMenuService, PosChecksService, PosSettlementService, PosShiftsService, PosSettingsService],
 })

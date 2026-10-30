@@ -87,7 +87,19 @@ export const POS_ITEMS: SeedItem[] = [
   { code: 'LS-SWIM', name: 'Swimming day pass', category: 'LEISURE', charge: 'OTHER', portions: [['ADULT', 'Adult', '500'], ['CHILD', 'Child', '300']] },
   { code: 'LS-FIVEASIDE', name: '5-a-side pitch (1 hour)', category: 'LEISURE', charge: 'OTHER', portions: [['STD', '', '3000']] },
   { code: 'SPA-MASSAGE', name: 'Full body massage 60 min', category: 'SPA', charge: 'OTHER', portions: [['STD', '', '3500']] },
+  // Loyalty test dishes (docs/how-to-test-loyalty.md): prices are KES 1.18 × a round amount before VAT and
+  // catering levy, so the addendum's worked examples (KES 5,000 eligible etc.) come out exactly.
+  ...LOYALTY_TEST_ITEMS(),
 ];
+
+function LOYALTY_TEST_ITEMS(): SeedItem[] {
+  return [
+    { code: 'LY-PLATTER', name: 'Sharing platter (5,000 + tax)', category: 'GRILL', charge: 'FOOD', portions: [['STD', '', '5900']] },
+    { code: 'LY-GRILL', name: 'Mixed grill for two (3,000 + tax)', category: 'GRILL', charge: 'FOOD', portions: [['STD', '', '3540']] },
+    { code: 'LY-CAKE', name: 'Celebration cake (2,000 + tax)', category: 'GRILL', charge: 'FOOD', portions: [['STD', '', '2360']] },
+    { code: 'LY-FEAST', name: 'Banquet feast (10,000 + tax)', category: 'GRILL', charge: 'FOOD', portions: [['STD', '', '11800']] },
+  ];
+}
 
 /** Which categories each kind of outlet sells. */
 function categoriesFor(type: string, sellsAlcohol: boolean, code: string): string[] {
@@ -212,6 +224,20 @@ export async function seedPos(client: Client): Promise<void> {
               [p.id, o.id, item.code, code, price, item.favourite ?? false, sort++],
             );
           }
+        }
+      }
+
+      // Loyalty test dishes also go on outlets that were priced before they existed.
+      if (cats.includes('GRILL') && !o.code.endsWith('-STAFFKIT')) {
+        let sort = 900;
+        for (const item of POS_ITEMS.filter((x) => x.code.startsWith('LY-'))) {
+          await client.query(
+            `INSERT INTO outlet_menu_prices (property_id, outlet_id, item_id, portion_id, price, is_favourite, sort_order)
+             SELECT $1, $2, mi.id, mp.id, $4, false, $5 FROM menu_items mi JOIN menu_item_portions mp ON mp.item_id = mi.id
+              WHERE mi.code = $3 AND mp.code = 'STD'
+             ON CONFLICT (outlet_id, portion_id) DO NOTHING`,
+            [p.id, o.id, item.code, item.portions[0][2], sort++],
+          );
         }
       }
 
