@@ -740,6 +740,9 @@ export function CashbackPage() {
               {preview.pending.length} club sale(s) are still waiting for a folio or company payment and will count in the month they are settled.
             </p>
           )}
+          {batches?.some((b) => b.month === month && ['draft', 'approved'].includes(b.status)) ? (
+            <p className="ys-muted">A batch for this month is waiting for approval or posting: open it below.</p>
+          ) : (
           <div className="ys-row">
             <Field label="Note for the batch"><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
             <button className="ys-btn" disabled={gen.busy} onClick={async () => {
@@ -747,6 +750,7 @@ export function CashbackPage() {
               if (b) { setOpen(b.id); refresh(); }
             }}>Save as draft {preview.nextBatch} batch</button>
           </div>
+          )}
           <ErrorText error={gen.error} />
         </>
       )}

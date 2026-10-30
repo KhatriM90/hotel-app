@@ -400,7 +400,15 @@ describe('Loyalty and club (LOY, CLUB, LAT, CAT)', () => {
       expect(batch.kind).toBe('regular');
       await api('group.accounts').post(`/api/loyalty/cashback/batches/${batch.id}/post`).expect(409); // not approved
       await api('k1.manager').post(`/api/loyalty/cashback/batches/${batch.id}/approve`, { reason: 'x' }).expect(403);
-      await api('group.accounts').post(`/api/loyalty/cashback/batches/${batch.id}/approve`, { reason: 'Checked against sales' }).expect(200);
+      // Maker-checker: the preparer cannot approve their own batch alone.
+      const self = await api('group.accounts').post(`/api/loyalty/cashback/batches/${batch.id}/approve`, { reason: 'Checked against sales' }).expect(403);
+      expect(self.body.error).toBe('approval_required');
+      await api('group.accounts')
+        .post(`/api/loyalty/cashback/batches/${batch.id}/approve`, { reason: 'Checked against sales', approval: { username: 'group.accounts', password: process.env.SEED_PASSWORD } })
+        .expect(403);
+      await api('group.accounts')
+        .post(`/api/loyalty/cashback/batches/${batch.id}/approve`, { reason: 'Checked against sales', approval: { username: 'owner', password: process.env.SEED_PASSWORD } })
+        .expect(200);
       const key = uniqueKey();
       const posted = (await api('group.accounts').post(`/api/loyalty/cashback/batches/${batch.id}/post`, {}, key).expect(200)).body;
       expect(posted.status).toBe('posted');

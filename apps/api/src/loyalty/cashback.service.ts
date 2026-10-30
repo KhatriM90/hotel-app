@@ -234,8 +234,8 @@ export class CashbackService {
    */
   async approve(batchId: string, input: { reason: string; approval?: ApprovalInputT }) {
     return this.db.tx(async (q) => {
-      const { rows: [b] } = await q.query<{ status: string; month: string; kind: string; totals: { amount: string } }>(
-        `SELECT status, month::text AS month, kind, totals FROM cashback_batches WHERE id = $1 FOR UPDATE`,
+      const { rows: [b] } = await q.query<{ status: string; month: string; kind: string; totals: { amount: string }; createdBy: string }>(
+        `SELECT status, month::text AS month, kind, totals, created_by AS "createdBy" FROM cashback_batches WHERE id = $1 FOR UPDATE`,
         [batchId],
       );
       if (!b) throw new NotFoundException('Cashback batch not found');
@@ -250,7 +250,7 @@ export class CashbackService {
       if (!hq) throw conflict('No head office property is visible to you', 'no_head_office');
       const approvalId = await this.approvals.approve({
         permission: 'approve.cashback_batch', propertyId: hq.id, action: 'loyalty.cashback_batch', entityType: 'cashback_batch', entityId: batchId,
-        reason: input.reason, approval: input.approval, details: { month: b.month, kind: b.kind, amount: b.totals.amount },
+        reason: input.reason, approval: input.approval, details: { month: b.month, kind: b.kind, amount: b.totals.amount }, notBy: b.createdBy,
       });
       const { rows: [a] } = await q.query<{ approvedBy: string }>('SELECT approved_by AS "approvedBy" FROM approvals WHERE id = $1', [approvalId]);
       await q.query(`UPDATE cashback_batches SET status = 'approved', approved_at = now(), approved_by = $2, approval_id = $3 WHERE id = $1`, [batchId, a?.approvedBy ?? actorId(), approvalId]);

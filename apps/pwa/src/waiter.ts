@@ -7,6 +7,7 @@
  * and room charges always need the server's answer.
  */
 import { api, ApiError, newKey, OfflineError } from './api';
+import { askRedeem, findMember, loyaltyHtml, type Preview, verifyMember } from './loyalty';
 import { OfflineQueue } from './queue';
 import { addMoney, confirmBox, esc, kes, modal, printHtml, showError, toast, withSignOff } from './ui';
 
@@ -66,12 +67,16 @@ interface Line {
   notes: string | null;
   discountPercent?: string;
   isComp?: boolean;
+  memberDiscountAmount?: string;
+  rewardAmount?: string;
+  returnedQuantity?: string;
   queued?: boolean;
 }
 interface Check {
   id: string;
   number: string;
   status: string;
+  settlement?: string | null;
   serviceType: string;
   tableId: string | null;
   tableCode: string | null;
@@ -82,8 +87,10 @@ interface Check {
   roomNumber: string | null;
   guestName: string | null;
   businessDate: string;
-  totals: { total: string; paid: string; pending: string; roomCharged: string; balance: string };
+  totals: { total: string; paid: string; pending: string; roomCharged: string; balance: string; memberDiscount?: string; rewards?: string; refunded?: string };
   lines: Line[];
+  loyaltyMemberId?: string | null;
+  loyaltyBenefit?: string | null;
   payments: Array<{ id: string; tender: string; amount: string; status: string; reference: string | null }>;
   offline?: boolean;
 }
@@ -112,6 +119,11 @@ export class WaiterApp {
   private selected = new Set<string>();
   private readonly queue = new OfflineQueue();
   private online = true;
+  /** The server's rewards preview for the open bill, and what it was fetched for. */
+  private loyalty: Preview | null = null;
+  private loyaltySig = '';
+  /** Card QR scanned when the member was attached: verifies them for redemption without an OTP. */
+  private memberQr: { memberId: string; qr: string } | null = null;
 
   constructor(
     private readonly root: HTMLElement,
@@ -383,6 +395,8 @@ export class WaiterApp {
     const kind = { table: 'Dine-in', counter: 'Counter', takeaway: 'Takeaway', room_service: 'Room service' }[c.serviceType] ?? c.serviceType;
     const due = addMoney(c.totals.balance, basketTotal);
     const noPay = offline || this.basket.length > 0 || !Number(c.totals.balance);
+    // Rewards or a 100% discount can leave nothing to pay: the bill is closed without a tender.
+    const zeroClose = !offline && !this.basket.length && live.length > 0 && !Number(c.totals.balance) && !Number(c.totals.pending);
     const cats = [{ code: 'ALL', name: 'All' }, { code: 'FAV', name: '★ Favourites' }, ...m.categories];
 
     this.screen(
@@ -427,7 +441,11 @@ export class WaiterApp {
               .join('')}
             ${!live.length && !this.basket.length ? '<li class="empty">Tap items on the left to start the order.</li>' : ''}
           </ul>
+          ${loyaltyHtml(c.loyaltyMemberId ? this.loyalty : null, open, !!offline)}
           <div class="totals">
+            ${Number(c.totals.memberDiscount ?? 0) ? `<div><span>Club discount</span><span>−KSh ${kes(c.totals.memberDiscount)}</span></div>` : ''}
+            ${Number(c.totals.rewards ?? 0) ? `<div><span>Rewards used</span><span>−KSh ${kes(c.totals.rewards)}</span></div>` : ''}
+            ${Number(c.totals.refunded ?? 0) ? `<div><span>Refunded (returns)</span><span>KSh ${kes(c.totals.refunded)}</span></div>` : ''}
             ${this.basket.length ? `<div><span>Not sent yet</span><span>KSh ${kes(basketTotal)}</span></div>` : ''}
             ${Number(c.totals.paid) || Number(c.totals.roomCharged) ? `<div><span>Paid / charged</span><span>KSh ${kes(addMoney(c.totals.paid, c.totals.roomCharged))}</span></div>` : ''}
             ${Number(c.totals.pending) ? `<div><span>Pending payment</span><span>KSh ${kes(c.totals.pending)}</span></div>` : ''}
@@ -439,7 +457,9 @@ export class WaiterApp {
               <button class="a-send" data-act="send" ${!this.basket.length && !live.some((l) => l.status === 'draft') ? 'disabled' : ''}>➤ Send order${this.basket.length ? ` (${this.basket.reduce((a, b) => a + b.quantity, 0)})` : ''}</button>
               <button class="a-bill" data-act="bill" ${offline ? 'disabled' : ''}>⎙ Print bill</button>
               <button class="a-plain" data-act="serve" ${offline ? 'disabled' : ''}>✓ Served</button>
-              <button class="a-pay" data-act="pay" ${noPay ? 'disabled' : ''} title="${this.basket.length ? 'Send the new items first' : ''}">PAY KSh ${kes(due)}</button>
+              ${zeroClose
+                ? '<button class="a-pay" data-act="close">Close bill (nothing to pay)</button>'
+                : `<button class="a-pay" data-act="pay" ${noPay ? 'disabled' : ''} title="${this.basket.length ? 'Send the new items first' : ''}">PAY KSh ${kes(due)}</button>`}
               <div class="tenders">
                 <button data-tender="cash" ${noPay ? 'disabled' : ''}>Cash</button>
                 <button data-tender="mpesa" ${noPay ? 'disabled' : ''}>M-Pesa</button>
@@ -461,7 +481,7 @@ export class WaiterApp {
               </details>
               ${offline ? '<p class="note">Offline: keep taking orders. Payments and room charges wait for the connection.</p>' : '<p class="note">Tap sent items to pick them for split, discount or cancel.</p>'}
             </div>`
-            : `<div class="actions"><button class="a-bill" data-act="bill">⎙ Print receipt</button><button class="a-pay" data-act="back">Done</button></div>`}
+            : `<div class="actions"><button class="a-bill" data-act="bill">⎙ Print receipt</button>${c.status === 'closed' && c.settlement === 'payment' ? `<button class="a-plain" data-act="returns" ${offline ? 'disabled' : ''}>↩ Return items</button>` : ''}<button class="a-pay" data-act="back">Done</button></div>`}
         </section>
       </div>`,
     );
@@ -502,6 +522,11 @@ export class WaiterApp {
     act('serve', () => this.serve());
     act('bill', async () => printHtml(await api.html(`${this.pos}/checks/${c.id}/print`)));
     act('pay', () => this.pay());
+    act('close', async () => {
+      this.check = await api.post<Check>(`${this.pos}/checks/${c.id}/close`);
+      toast('Bill closed', 'ok');
+      this.renderCheck();
+    });
     act('evenly', () => this.splitEvenly());
     act('room', () => this.roomCharge());
     act('discount', () => this.discount());
@@ -511,6 +536,12 @@ export class WaiterApp {
     act('merge', () => this.merge());
     act('house', () => this.houseAccount());
     act('void', () => this.voidCheck());
+    act('member', () => this.member());
+    act('redeem', () => this.redeem());
+    act('unredeem', () => this.unredeem());
+    act('returns', () => this.returns());
+    on('[data-benefit]', (el) => void this.benefit(el.dataset.benefit as 'discount' | 'cashback').catch(showError));
+    this.syncLoyalty();
   }
 
   /** Menu tiles for the chosen category, or every item matching the search. */
@@ -933,6 +964,107 @@ export class WaiterApp {
     if (out) {
       toast(`${out.number} voided`, 'ok');
       await this.showFloor();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // YeaStay Rewards on the bill (LOY13, LOY15, LOY16, LOY22, CLUB02)
+  // ---------------------------------------------------------------------------
+  private get loyaltyBase() {
+    return `/properties/${this.property}/loyalty`;
+  }
+
+  /** Fetches the rewards preview whenever the bill or its member changed since the last fetch. */
+  private syncLoyalty(): void {
+    const c = this.check;
+    if (!c || c.offline || !this.online) return;
+    if (!c.loyaltyMemberId) {
+      this.loyalty = null;
+      this.loyaltySig = '';
+      return;
+    }
+    const sig = [c.id, c.status, c.loyaltyMemberId, c.loyaltyBenefit, c.totals.total, c.totals.rewards, c.lines.length].join('|');
+    if (sig === this.loyaltySig) return;
+    this.loyaltySig = sig;
+    api
+      .get<Preview>(`${this.pos}/checks/${c.id}/loyalty`)
+      .then((p) => {
+        if (this.check?.id !== c.id) return;
+        this.loyalty = p;
+        this.renderCheck();
+      })
+      .catch(showError);
+  }
+
+  /** Re-reads the bill after a loyalty change so totals and the strip agree. */
+  private async afterLoyalty(p: Preview) {
+    this.loyalty = p;
+    this.check = await api.get<Check>(`${this.pos}/checks/${this.check!.id}`);
+    this.loyaltySig = '';
+    this.renderCheck();
+  }
+
+  private async member() {
+    const found = await findMember(this.loyaltyBase, this.outletCode);
+    if (!found) return;
+    const memberId = found === 'remove' ? null : found.member.id;
+    this.memberQr = found !== 'remove' && found.qr ? { memberId: found.member.id, qr: found.qr } : null;
+    const p = await api.put<Preview>(`${this.pos}/checks/${this.check!.id}/loyalty/member`, { memberId });
+    if (found !== 'remove') toast(`${found.member.name} added to the bill`, 'ok');
+    await this.afterLoyalty(p);
+  }
+
+  private async benefit(benefit: 'discount' | 'cashback') {
+    const p = await api.put<Preview>(`${this.pos}/checks/${this.check!.id}/loyalty/benefit`, { benefit });
+    await this.afterLoyalty(p);
+  }
+
+  private async redeem() {
+    await this.flushDrafts();
+    const preview = this.loyalty;
+    if (!preview?.member) return;
+    const ask = await askRedeem(preview);
+    if (!ask) return;
+    const c = this.check!;
+    const qr = this.memberQr?.memberId === preview.member.id ? this.memberQr.qr : null;
+    const verificationId = await verifyMember(this.loyaltyBase, preview.member.id, c.id, qr);
+    if (!verificationId) return;
+    const p = await api.post<Preview>(`${this.pos}/checks/${c.id}/loyalty/rewards`, { ...(ask.points ? { points: ask.points } : {}), ...(Number(ask.wallet) ? { wallet: ask.wallet } : {}), verificationId });
+    toast(`KSh ${kes(p.applied?.rewardAmount)} taken off the bill`, 'ok');
+    await this.afterLoyalty(p);
+  }
+
+  private async unredeem() {
+    if (!(await confirmBox('Remove rewards', 'Give the points and credit back to the member and remove them from this bill?', 'Remove'))) return;
+    const p = await api.post<Preview>(`${this.pos}/checks/${this.check!.id}/loyalty/rewards/remove`);
+    await this.afterLoyalty(p);
+  }
+
+  /** Returns after payment (LOY20): refunds the items, and points and cashback follow on the server. */
+  private async returns() {
+    const c = this.check!;
+    const lines = c.lines.filter((l) => l.status !== 'cancelled' && l.status !== 'wasted' && Number(l.quantity) - Number(l.returnedQuantity ?? 0) > 0);
+    if (!lines.length) return toast('Everything on this bill has already been returned', 'info');
+    const res = await modal(
+      `Return items from ${c.number}`,
+      `${lines
+        .map((l) => {
+          const left = Number(l.quantity) - Number(l.returnedQuantity ?? 0);
+          return `<label>${esc(l.name)} <small>(KSh ${kes(l.amount)}, ${left} can be returned)</small><input name="q_${esc(l.id)}" type="number" min="0" max="${left}" step="1" value="0"></label>`;
+        })
+        .join('')}
+       <label>Reason<input name="reason" required minlength="3" maxlength="500"></label>
+       <p class="muted">The money goes back to the tenders used. A manager signs off.</p>`,
+      { submit: 'Return and refund', danger: true },
+    );
+    if (!res) return;
+    const picked = lines.map((l) => ({ lineId: l.id, quantity: res[`q_${l.id}`] ?? '0' })).filter((x) => Number(x.quantity) > 0);
+    if (!picked.length) return toast('Choose at least one item to return', 'info');
+    const out = await withSignOff((extra) => api.post<{ return: { number: string; amount: string }; check: Check }>(`${this.pos}/checks/${c.id}/returns`, { lines: picked, reason: res.reason, ...extra }));
+    if (out) {
+      toast(`Return ${out.return.number}: KSh ${kes(out.return.amount)} refunded`, 'ok');
+      this.check = out.check;
+      this.renderCheck();
     }
   }
 
