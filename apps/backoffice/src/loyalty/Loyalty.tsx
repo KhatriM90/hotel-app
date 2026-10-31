@@ -607,7 +607,6 @@ export function LoyaltyProgrammePage() {
               <option value="discount">a discount (lowers VAT)</option><option value="tender">a payment (VAT on the full price)</option>
             </select>
           </Field>
-          <div className="ys-row"><Field label="SAP cashback expense account">{text('sapAccounts', 'cashbackExpense')}</Field><Field label="SAP wallet liability account">{text('sapAccounts', 'walletLiability')}</Field></div>
         </div>
       </div>
       {canEdit && draft && (
@@ -691,6 +690,62 @@ function TierDialog({ tier, onClose, onDone }: { tier: Record<string, any>; onCl
 // Month-end cashback (CLUB03, CLUB04)
 // ---------------------------------------------------------------------------
 
+/** Finance maps the SAP G/L accounts; journals held until then go to SAP once (LOY18, CLUB07). */
+function SapAccountsCard() {
+  const { me } = useSession();
+  const { data, reload } = useLoad(() => api.get<Record<string, any>>('/loyalty/sap-accounts'), []);
+  const [f, setF] = useState<{ cashbackExpense: string; walletLiability: string; reason: string } | null>(null);
+  const save = useAction<Record<string, any>>();
+  const [released, setReleased] = useState<number | null>(null);
+  const canMap = hasPermission(me.roles, 'loyalty.finance');
+  if (!data) return null;
+  const cur = data.current;
+  return (
+    <section className="ys-section">
+      <h2>SAP accounts</h2>
+      <div className="ys-card">
+        {cur ? (
+          <p>
+            Cashback expense <strong>{cur.cashbackExpense}</strong> · Wallet liability <strong>{cur.walletLiability}</strong>
+            <span className="ys-muted"> · set by {cur.createdBy ?? '—'}, {when(cur.createdAt)}</span>
+          </p>
+        ) : (
+          <p className="ys-warn-text">Not mapped yet. Cashback and wallet journals wait here and go to SAP once the accounts are saved.</p>
+        )}
+        {data.held.count > 0 && <p className="ys-muted">{data.held.count} journal(s) waiting, {kes(data.held.amount)} in total.</p>}
+        {canMap && !f && (
+          <button className="ys-btn ghost" onClick={() => setF({ cashbackExpense: cur?.cashbackExpense ?? '', walletLiability: cur?.walletLiability ?? '', reason: '' })}>
+            {cur ? 'Change accounts' : 'Map accounts'}
+          </button>
+        )}
+        {f && (
+          <form
+            className="ys-form"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const out = await save.run(() => api.put<Record<string, any>>('/loyalty/sap-accounts', f));
+              if (out) { setF(null); setReleased(out.released); reload(); }
+            }}
+          >
+            <div className="ys-row">
+              <Field label="Cashback expense account" hint="SAP G/L account code"><input required maxLength={15} value={f.cashbackExpense} onChange={(e) => setF({ ...f, cashbackExpense: e.target.value.trim() })} /></Field>
+              <Field label="Wallet liability account" hint="SAP G/L account code"><input required maxLength={15} value={f.walletLiability} onChange={(e) => setF({ ...f, walletLiability: e.target.value.trim() })} /></Field>
+            </div>
+            <Field label="Reason"><input required minLength={3} value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} /></Field>
+            <p className="ys-muted">A change applies to journals from now on; journals already sent to SAP keep their accounts.</p>
+            <div className="ys-row">
+              <button type="button" className="ys-btn ghost" onClick={() => setF(null)}>Cancel</button>
+              <button className="ys-btn" disabled={save.busy}>Save and send waiting journals</button>
+            </div>
+            <ErrorText error={save.error} />
+          </form>
+        )}
+        {released !== null && <p className="ys-muted">{released} waiting journal(s) sent to SAP.</p>}
+      </div>
+    </section>
+  );
+}
+
 export function CashbackPage() {
   const { me } = useSession();
   const [month, setMonth] = useState(thisMonth());
@@ -754,6 +809,7 @@ export function CashbackPage() {
           <ErrorText error={gen.error} />
         </>
       )}
+      <SapAccountsCard />
       <section className="ys-section">
         <h2>Batches</h2>
         <table className="ys-table compact">

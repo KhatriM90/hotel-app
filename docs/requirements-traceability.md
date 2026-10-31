@@ -181,9 +181,9 @@ Migration `0016`; API in `apps/api/src/loyalty`, with hooks in POS checkout, POS
 | LOY15 | Done | Every movement is an append-only ledger event with the user, property, outlet, bill and reason; POS staff see a masked member. Corrections need a manager's approval. |
 | LOY16 | Done | Members, ledger events, lots, holds, verifications, programme versions, club tiers and overrides, accruals and batches. |
 | LOY17 | Done | Tablet: lookup, enrol, reward preview, redeem, remove. Back office: members, history, programme, cashback, reports. |
-| LOY18 | Partial (mock) | Wallet redemptions and cashback post a journal to SAP (JournalEntries). The G/L accounts are blank until finance gives them, so the journals wait with a mapping error. Points are a discount on the sale, so they go to SAP inside the A/R invoice. |
+| LOY18 | Partial (mock) | Wallet redemptions and cashback post a journal to SAP (JournalEntries). Finance maps the cashback expense and wallet liability G/L accounts on Club cashback (migration `0017`, audited, every change kept); journals made before the mapping are held and go to SAP once when it is saved. Points are a discount on the sale, so they go to SAP inside the A/R invoice. |
 | LOY19 | Done | Movement report (opening + movements = closing, ledger vs lots), liability by property and expiry, pending settlement, exceptions. |
-| LOY20 | Partial | The reward is a discount line before VAT and levy (switchable in settings). Returns restore and reverse by line; a return is a separate document with a SAP credit note. **Finance must confirm the treatment.** The eTIMS invoice and credit note wait for INT-02. |
+| LOY20 | Partial | The reward is a discount line before VAT and levy (switchable in settings). Returns restore and reverse by line; a return is a separate document with a SAP credit note. Confirmed by Manish Khatri (31 Oct 2026). The KRA TIMS invoice and credit note wait for INT-02. |
 | LOY21 | Partial | Issued, redeemed, expired and outstanding points by property and month at the point value. Breakage forecast not yet. |
 | LOY22 | Done | OTP (shown on screen until there is an SMS gateway) or the member card QR before every redemption; staff accounts flagged and excluded on their own bills; exceptions for many bills a day, one waiter's share and failed codes; daily earning cap. Reprint-before-attach detection is not built. |
 | LOY23 | Partial | Balance on every receipt; a member page by secure link with balances, expiring points and the statement (printable). SMS and WhatsApp after each sale wait for a gateway. |
@@ -198,12 +198,12 @@ Migration `0016`; API in `apps/api/src/loyalty`, with hooks in POS checkout, POS
 | CLUB04 | Done | Preview, draft, approval by a second person, posting once per member; adjustment batches after posting. |
 | CLUB05 | Done | Wallet with lots, a 12-month expiry and a cap per bill; holds like points. |
 | CLUB06 | Done | Returns reduce the entitlement; after posting, an adjustment batch takes it back and can leave a negative wallet that blocks use. |
-| CLUB07 | Partial (mock) | Statements and reports done; SAP journals per property wait for the G/L accounts. |
-| LAT01–LAT16, CAT01–CAT12 | See `docs/how-to-test-loyalty.md` | LAT13 waits for eTIMS; LAT04 packages wait for S10. |
+| CLUB07 | Partial (mock) | Statements and reports done; SAP journals per property, with the G/L accounts finance maps in the app. |
+| LAT01–LAT16, CAT01–CAT12 | See `docs/how-to-test-loyalty.md` | LAT13 waits for KRA TIMS; LAT04 packages wait for S10. |
 
-### Defaults used in this PR (to confirm)
+### Defaults used in this PR (confirmed by Manish Khatri, 31 Oct 2026)
 
-- **Reward treatment:** a discount line that reduces the VAT base, so 800 points take KES 944 off a till price that includes tax. The other option (non-cash tender) is a setting. Finance to confirm (LOY20).
+- **Reward treatment:** a discount line that reduces the VAT base, so 800 points take KES 944 off a till price that includes tax. The other option (non-cash tender) stays a setting (LOY20).
 - **Club members earn cashback only**, not points. Setting.
 - **With stacking off, the club discount is the default benefit**, switchable to cashback per bill.
 - **Wallet credit can pay up to 100% of a bill** and expires after 12 months.
@@ -221,6 +221,7 @@ KRA PIN `P000598390N`; SAP branches K1 Parklands = 1, Small World = 4, Kahama = 
 ## Decisions (Manish Khatri, 26 Oct 2026)
 
 - **eTIMS:** one registration for the group, not one per property. Fiscal invoice numbers are one group-wide sequence (migration `0008`). This replaces the brief's per-property bhfId in INT-02 and SAP-AT11.
+- **Superseded 31 Oct 2026 (Manish Khatri): the client uses KRA TIMS, not eTIMS.** Each branch has one TIMS device, all registered under the same KRA PIN. The INT-02 integration will talk to each property's device, and the fiscal numbering in `0008` must be reviewed against the per-device numbering when it is built.
 - **Outlets:** the 43 SAP outlets are the billing outlets (the brief's 21 is superseded).
 - **Catering levy:** posted as its own C1 (2%) line, separate from VAT (BIL-16).
 - **SAP Dimension 2:** short outlet codes (max 8 characters) as listed in `0008`.

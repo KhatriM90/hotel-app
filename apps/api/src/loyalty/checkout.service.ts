@@ -96,6 +96,15 @@ function pct(v: string): Decimal {
  * returned line used. The POS calls these inside its own transactions, after
  * locking the check, so a reward and the bill always change together.
  */
+export interface SapMapping {
+  id: string;
+  cashbackExpense: string;
+  walletLiability: string;
+  reason: string;
+  createdAt: string;
+  createdBy: string | null;
+}
+
 @Injectable()
 export class LoyaltyCheckoutService {
   constructor(
@@ -625,17 +634,79 @@ export class LoyaltyCheckoutService {
     );
   }
 
-  /** Loyalty journal to SAP (CLUB07); accounts come from the finance mapping in programme settings. */
-  async journal(q: Queryable, s: LoyaltySettings, j: { propertyId: string; ref: string; kind: string; amount: string; date: string; memo: string; reverse?: boolean }) {
-    const expense = s.sapAccounts.cashbackExpense || 'UNMAPPED';
-    const liability = s.sapAccounts.walletLiability || 'UNMAPPED';
+  /**
+   * Loyalty journal to SAP (LOY18, CLUB07) with the G/L accounts finance mapped.
+   * Until they are mapped the journal is held, and it goes to SAP once when
+   * the mapping is saved (`mapSapAccounts`).
+   */
+  async journal(q: Queryable, _s: LoyaltySettings, j: { propertyId: string; ref: string; kind: string; amount: string; date: string; memo: string; reverse?: boolean }) {
     const amount = Money.of(j.amount).toString();
+    const mapping = await this.sapMapping(q);
+    if (!mapping) {
+      await q.query(
+        `INSERT INTO loyalty_held_journals (property_id, external_ref, kind, doc_date, memo, amount, reverse)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (external_ref) DO NOTHING`,
+        [j.propertyId, j.ref, j.kind, j.date, j.memo, amount, !!j.reverse],
+      );
+      return;
+    }
+    await this.enqueueJournal(q, mapping, { ...j, amount });
+  }
+
+  private async enqueueJournal(q: Queryable, m: SapMapping, j: { propertyId: string; ref: string; kind: string; amount: string; date: string; memo: string; reverse?: boolean }) {
     const lines = j.reverse
-      ? [{ account: liability, debit: amount, credit: '0.00' }, { account: expense, debit: '0.00', credit: amount }]
-      : [{ account: expense, debit: amount, credit: '0.00' }, { account: liability, debit: '0.00', credit: amount }];
+      ? [{ account: m.walletLiability, debit: j.amount, credit: '0.00' }, { account: m.cashbackExpense, debit: '0.00', credit: j.amount }]
+      : [{ account: m.cashbackExpense, debit: j.amount, credit: '0.00' }, { account: m.walletLiability, debit: '0.00', credit: j.amount }];
     const { rowCount } = await q.query('SELECT 1 FROM integration_outbox WHERE external_ref = $1', [j.ref]);
     if (rowCount) return;
     await this.outbox.enqueue({ propertyId: j.propertyId, eventType: 'LOYALTY_JOURNAL', externalRef: j.ref, payload: { kind: j.kind, docDate: j.date, memo: j.memo, lines } });
+  }
+
+  /** The G/L accounts in force, or null while finance has not mapped them. */
+  async sapMapping(q: Queryable): Promise<SapMapping | null> {
+    const { rows } = await q.query<SapMapping>(
+      `SELECT a.id, a.cashback_expense AS "cashbackExpense", a.wallet_liability AS "walletLiability", a.reason, a.created_at AS "createdAt", u.display_name AS "createdBy"
+         FROM loyalty_sap_accounts a LEFT JOIN users u ON u.id = a.created_by ORDER BY a.created_at DESC LIMIT 1`,
+    );
+    return rows[0] ?? null;
+  }
+
+  /** The mapping in force and the journals still waiting for it. */
+  async sapAccounts() {
+    return this.db.tx(async (q) => {
+      const { rows: [held] } = await q.query<{ count: number; amount: string }>(
+        `SELECT count(*)::int AS count, coalesce(sum(amount), 0)::numeric(18,2)::text AS amount FROM loyalty_held_journals WHERE released_at IS NULL`,
+      );
+      const { rows: history } = await q.query(
+        `SELECT a.cashback_expense AS "cashbackExpense", a.wallet_liability AS "walletLiability", a.reason, a.created_at AS "createdAt", u.display_name AS "createdBy"
+           FROM loyalty_sap_accounts a LEFT JOIN users u ON u.id = a.created_by ORDER BY a.created_at DESC LIMIT 20`,
+      );
+      return { current: await this.sapMapping(q), held, history };
+    });
+  }
+
+  /** Saves the mapping (finance) and sends every held journal to SAP once with it. */
+  async mapSapAccounts(input: { cashbackExpense: string; walletLiability: string; reason: string }) {
+    return this.db.tx(async (q) => {
+      const { rows: [m] } = await q.query<{ id: string }>(
+        `INSERT INTO loyalty_sap_accounts (cashback_expense, wallet_liability, reason, created_by) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [input.cashbackExpense, input.walletLiability, input.reason, actorId()],
+      );
+      const mapping = (await this.sapMapping(q))!;
+      const { rows: held } = await q.query<{ id: string; propertyId: string; ref: string; kind: string; date: string; memo: string; amount: string; reverse: boolean }>(
+        `SELECT id, property_id AS "propertyId", external_ref AS ref, kind, doc_date::text AS date, memo, amount::text, reverse
+           FROM loyalty_held_journals WHERE released_at IS NULL ORDER BY created_at FOR UPDATE`,
+      );
+      for (const h of held) {
+        await this.enqueueJournal(q, mapping, h);
+        await q.query('UPDATE loyalty_held_journals SET released_at = now(), mapping_id = $2 WHERE id = $1', [h.id, m.id]);
+      }
+      await this.audit.record({
+        action: 'loyalty.sap_accounts', entityType: 'loyalty_sap_accounts', entityId: m.id, reason: input.reason,
+        newValues: { cashbackExpense: input.cashbackExpense, walletLiability: input.walletLiability, released: held.length },
+      });
+      return { ...(await this.sapAccounts()), released: held.length };
+    });
   }
 
   // -------------------------------------------------------------------------

@@ -426,11 +426,30 @@ describe('Loyalty and club (LOY, CLUB, LAT, CAT)', () => {
       } else {
         expect(again.body.error).toBe('nothing_to_adjust');
       }
-      // The SAP journal is queued and waits for the G/L accounts (CLUB07).
+      // The SAP journal waits for finance to map the G/L accounts, then goes once (LOY18, CLUB07).
+      const ref = `CB-%-${batch.id.slice(0, 8)}-K1`;
       const owner = await ownerClient();
       try {
-        const { rows } = await owner.query(`SELECT payload FROM integration_outbox WHERE event_type = 'LOYALTY_JOURNAL' AND external_ref LIKE $1`, [`CB-%-${batch.id.slice(0, 8)}-K1`]);
-        expect(rows[0].payload.lines[0]).toMatchObject({ account: 'UNMAPPED', debit: '1500.00' });
+        const outbox = () => owner.query(`SELECT payload FROM integration_outbox WHERE event_type = 'LOYALTY_JOURNAL' AND external_ref LIKE $1`, [ref]);
+        expect((await outbox()).rows).toHaveLength(0);
+        const held = (await api('group.accounts').get('/api/loyalty/sap-accounts').expect(200)).body;
+        expect(held.current).toBeNull();
+        expect(held.held.count).toBeGreaterThan(0);
+        const accounts = { cashbackExpense: '61200', walletLiability: '22150', reason: 'Accounts from finance' };
+        await api('k1.cashier').put('/api/loyalty/sap-accounts', accounts).expect(403);
+        await api('group.accounts').put('/api/loyalty/sap-accounts', { ...accounts, walletLiability: '61200' }).expect(400);
+        const mapped = (await api('group.accounts').put('/api/loyalty/sap-accounts', accounts).expect(200)).body;
+        expect(mapped.released).toBe(held.held.count);
+        expect(mapped.held.count).toBe(0);
+        const { rows } = await outbox();
+        expect(rows).toHaveLength(1);
+        expect(rows[0].payload.lines).toEqual([
+          { account: '61200', debit: '1500.00', credit: '0.00' },
+          { account: '22150', debit: '0.00', credit: '1500.00' },
+        ]);
+        // Saving again sends nothing twice.
+        expect((await api('group.accounts').put('/api/loyalty/sap-accounts', accounts).expect(200)).body.released).toBe(0);
+        expect((await outbox()).rows).toHaveLength(1);
       } finally {
         await owner.end();
       }

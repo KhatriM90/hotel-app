@@ -123,7 +123,7 @@ ${!closed && check.status === 'open' ? `<tr class="strong"><td>BALANCE DUE</td><
 </table>
 ${sign}${loyalty}
 <hr><div class="c">Prices include VAT and catering levy.</div>
-<div class="c">eTIMS fiscal receipt not yet issued (integration pending).</div>
+<div class="c">KRA TIMS fiscal receipt not yet issued (integration pending).</div>
 <footer>Thank you · Powered by YeaStay</footer>`,
   );
 }

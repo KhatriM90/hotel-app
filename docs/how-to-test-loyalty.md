@@ -128,7 +128,7 @@ Wallet credit and card (CAT08):
 - [ ] Ring up club bills on cashback (see section 6) and pay them. Five **LY-FEAST** bills are KES 50,000 net, which gives **KES 7,500 at 15%** (CAT01).
 - [ ] Back office as `group.accounts`: **Club cashback**, current month. The preview lists each member's spend, returns, the rate on each sale date, the entitlement and anything already credited. A month that has not ended is marked; later sales then go into an adjustment batch.
 - [ ] **Save as draft regular batch**. Open it. Approving needs a **second person**: `group.accounts` prepared it, so the screen asks for another approver; sign in as `owner`.
-- [ ] **Post to wallets**. Each member's wallet goes up once. Posting again does nothing more (CAT05). Each property gets one SAP journal (cashback expense / wallet liability): see **SAP postings**.
+- [ ] **Post to wallets**. Each member's wallet goes up once. Posting again does nothing more (CAT05). Each property gets one SAP journal (cashback expense / wallet liability). If the accounts are not mapped yet, **SAP accounts** on the same page shows the journals waiting: enter the two G/L codes (any test codes on dev, for example 61200 and 22150) and save, and they appear in **SAP postings**.
 - [ ] Return a cashback sale after posting. The next preview shows a negative line and an **adjustment** batch takes it back, which can leave the wallet negative (CAT07).
 
 ## 8. Room charges and company bills (LAT03, LAT04, LAT08)
@@ -160,7 +160,7 @@ Wallet credit and card (CAT08):
 ## 12. Fiscal receipt (LAT13): partly covered
 
 - [ ] The receipt shows the reward as its own line ("Rewards used"), and a return creates a separate return document (K1-RT-…) and a SAP credit note. The bill itself is never edited.
-- eTIMS is not connected yet (INT-02), so no fiscal invoice or credit note is sent to KRA. LAT13 can be signed off only when eTIMS is built.
+- KRA TIMS is not connected yet (INT-02), so no fiscal invoice or credit note is sent to KRA. LAT13 can be signed off only when the TIMS integration is built.
 
 ---
 
@@ -180,7 +180,7 @@ Wallet credit and card (CAT08):
 | LAT10 Permissions and merge | §9 | LAT10, negative balance (S17) |
 | LAT11 Reconciliation | §11 | ledger movement reconciles |
 | LAT12 Restore and boundaries | §10, plus a DB restore on the server | LAT14 (redacted history) |
-| LAT13 Fiscal invoice | §12, partly | waits for eTIMS |
+| LAT13 Fiscal invoice | §12, partly | waits for TIMS |
 | LAT14 Cross-property | §10 | LAT14 |
 | LAT15 Staff misuse | §3, §9 | LAT15 |
 | LAT16 Benefit ceiling | below | LAT16 |
@@ -204,8 +204,8 @@ Wallet credit and card (CAT08):
 ## Not in this release
 
 - LOY02 to LOY10 (tiers, campaigns, birthday, referrals and the other advanced options).
-- eTIMS (LAT13), SMS delivery of the code (shown on screen for now), packages and included breakfast (S10).
-- The SAP G/L accounts for cashback expense and wallet liability are blank until finance gives them. Journals wait in **SAP postings** with a mapping error until then.
+- KRA TIMS (LAT13), SMS delivery of the code (shown on screen for now), packages and included breakfast (S10).
+- The SAP G/L accounts for cashback expense and wallet liability are mapped by finance on **Club cashback → SAP accounts**. Until then, wallet and cashback journals wait in the app; saving the accounts sends each waiting journal to SAP once.
 
 ---
 
@@ -225,4 +225,4 @@ Use the **test** domain. Have the tablet (as `k1.waiter`) and the back office (a
 
 **8:30 · Control and reports (1.5 min).** **Loyalty reports**: movement reconciles to zero difference, the outstanding liability is by property, and the exceptions show staff on their own bills and members on many bills a night. **Loyalty programme**: every rule is configurable and each change is a dated version, so old bills never change.
 
-**10:00 · Questions.** Name what comes next: SMS codes, eTIMS invoices with the reward line, and the advanced options (LOY02 to LOY10).
+**10:00 · Questions.** Name what comes next: SMS codes, TIMS fiscal invoices with the reward line, and the advanced options (LOY02 to LOY10).

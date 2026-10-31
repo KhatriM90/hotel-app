@@ -497,7 +497,7 @@ export class FrontDeskService {
         content: {
           property: await this.folios.header(q, propertyId), folioNumber: folio.number, stayNumber: stay.number, ...info,
           charges: lines.charges, payments: lines.payments.filter((p) => p.status === 'confirmed'), taxSummary: lines.taxSummary, totals,
-          fiscal: { status: 'not_submitted', note: 'eTIMS submission is not yet integrated (INT-02)' },
+          fiscal: { status: 'not_submitted', note: 'KRA TIMS submission is not yet integrated (INT-02)' },
         },
       });
       await q.query(`UPDATE folios SET status = 'closed', closed_at = now(), closed_by = $2, finalised_at = now() WHERE id = $1`, [folio.id, this.actor()]);

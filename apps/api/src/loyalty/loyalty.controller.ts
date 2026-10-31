@@ -77,6 +77,10 @@ const TierRate = z.object({ discountPercent: Percent.nullable(), cashbackPercent
 const Generate = z.object({ month: Month, note: z.string().trim().max(500).nullish() });
 const Approve = z.object({ reason: Reason, approval: ApprovalInput });
 const Discard = z.object({ reason: Reason });
+const GlAccount = z.string().trim().regex(/^[A-Za-z0-9._-]{1,15}$/, 'expected a SAP G/L account code (up to 15 letters, digits, dot, dash)');
+const SapAccounts = z
+  .object({ cashbackExpense: GlAccount, walletLiability: GlAccount, reason: Reason })
+  .refine((v) => v.cashbackExpense !== v.walletLiability, 'The expense and liability accounts must differ');
 
 // ---------------------------------------------------------------------------
 // Members at a property: enrolment, lookup, verification, corrections (LOY11, LOY15, LOY23, LOY24)
@@ -270,6 +274,7 @@ export class LoyaltyAdminController {
     private readonly programme: LoyaltyProgrammeService,
     private readonly cashback: CashbackService,
     private readonly reports: LoyaltyReportsService,
+    private readonly checkout: LoyaltyCheckoutService,
   ) {}
 
   @Get('programme')
@@ -289,6 +294,18 @@ export class LoyaltyAdminController {
   @RequirePermission('loyalty.programme')
   tierRate(@Param('code') code: string, @Body(new ZodPipe(TierRate)) b: Body<typeof TierRate>) {
     return this.programme.setTierRate(code, b);
+  }
+
+  @Get('sap-accounts')
+  @RequirePermission('loyalty.read')
+  sapAccounts() {
+    return this.checkout.sapAccounts();
+  }
+
+  @Put('sap-accounts')
+  @RequirePermission('loyalty.finance')
+  mapSapAccounts(@Body(new ZodPipe(SapAccounts)) b: Body<typeof SapAccounts>) {
+    return this.checkout.mapSapAccounts(b);
   }
 
   @Get('cashback/preview')
