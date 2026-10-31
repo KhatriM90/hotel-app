@@ -22,12 +22,14 @@
  * DEMO_FORCE=1 to add another set. Every guest, booking and check is marked
  * "Demo data".
  *
- * Other settings: DEMO_PROPERTIES=K1,SW,KM (default all), DEMO_HISTORY=auto|on|off.
+ * Other settings: DEMO_PROPERTIES=K1,SW,KM (default all), DEMO_HISTORY=auto|on|off,
+ * DEMO_ONLY=loyalty (only the loyalty demo members; safe on a stack that already has the rest).
  */
 import { addDays } from '@hotel/shared';
 import { DemoApi } from './demo/api-client';
 import { closeDay, DemoContext, PropertyCode, ScenarioResult } from './demo/context';
 import { arrivePast, PLANS, present } from './demo/hotel-demo';
+import { loyaltyDemo } from './demo/loyalty-demo';
 import { posDemo } from './demo/pos-demo';
 
 export interface DemoOptions {
@@ -36,6 +38,8 @@ export interface DemoOptions {
   properties?: PropertyCode[];
   history?: 'auto' | 'on' | 'off';
   force?: boolean;
+  /** 'loyalty' adds only the loyalty demo members (for a stack that already has the hotel and POS demo). */
+  only?: 'loyalty';
   /** Today's date at the hotels; defaults to the clock in Africa/Nairobi. */
   today?: string;
   log?: (line: string) => void;
@@ -57,8 +61,13 @@ export async function runDemo(opts: DemoOptions): Promise<DemoReport> {
   const owner = await api.as('owner');
   const clock = opts.today ?? nairobiToday();
   const report: DemoReport = { results: [], skipped: [], dates: {} };
+  const codes = opts.properties ?? (['K1', 'SW', 'KM'] as PropertyCode[]);
+  if (opts.only === 'loyalty') {
+    await loyaltyDemo(api, codes, report.results, log, clock);
+    return report;
+  }
 
-  for (const code of opts.properties ?? (['K1', 'SW', 'KM'] as PropertyCode[])) {
+  for (const code of codes) {
     const base = `/properties/${code}`;
     const businessDate = async () => (await owner.get<{ currentBusinessDate: string }>(base)).currentBusinessDate;
     const start = await businessDate();
@@ -106,6 +115,8 @@ export async function runDemo(opts: DemoOptions): Promise<DemoReport> {
     await posDemo(ctx, hotel);
     report.dates[code] = { from: start, to: ctx.today };
   }
+  // Loyalty members are found by phone, so this part is safe to repeat (addendum v1.2).
+  await loyaltyDemo(api, codes, report.results, log, clock);
   return report;
 }
 
@@ -137,6 +148,7 @@ if (require.main === module) {
     properties,
     history,
     force: ['1', 'true'].includes(process.env.DEMO_FORCE ?? ''),
+    only: process.env.DEMO_ONLY === 'loyalty' ? 'loyalty' : undefined,
   })
     .then((report) => {
       printSummary(report);

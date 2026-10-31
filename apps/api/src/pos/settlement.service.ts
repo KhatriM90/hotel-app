@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import Decimal from 'decimal.js';
 import { Money, PosTender, spreadOverLines } from '@hotel/shared';
 import { AuditService } from '../audit/audit.service';
 import { DbService, Queryable } from '../db/db.service';
@@ -6,6 +8,7 @@ import { ApprovalsService } from '../frontoffice/approvals.service';
 import { ApprovalInputT, businessDate, conflict, isPgError, withSavepoint } from '../frontoffice/common';
 import { FoliosService } from '../frontoffice/folios.service';
 import { OutboxService } from '../integration/outbox.service';
+import { LoyaltyCheckoutService } from '../loyalty/checkout.service';
 import { NumberingService } from '../numbering/numbering.service';
 import { PosChecksService, LockedCheck } from './checks.service';
 import { actorId, event, outletById } from './common';
@@ -50,6 +53,7 @@ export class PosSettlementService {
     private readonly numbering: NumberingService,
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
+    private readonly loyalty: LoyaltyCheckoutService,
   ) {}
 
   async totals(q: Queryable, checkId: string): Promise<Totals> {
@@ -76,6 +80,7 @@ export class PosSettlementService {
     return this.db.tx(async (q) => {
       const check = await this.checks.lock(q, propertyId, checkId);
       await this.checks.sendDrafts(q, check); // paying finalises the order
+      await this.loyalty.touch(q, check.id);
       const t = await this.totals(q, check.id);
       let remaining = Money.of(t.balance).subtract(t.pending);
       if (remaining.compare(0) <= 0) {
@@ -165,6 +170,8 @@ export class PosSettlementService {
       [check.id, settlement, actorId()],
     );
     await event(q, check.propertyId, check.id, 'closed', { settlement, total: t.total });
+    // Rewards commit and points or cashback are awarded with the settled bill, in this transaction (S01, S07).
+    await this.loyalty.onCheckClosed(q, check.propertyId, check.id, t, settlement);
     // The paid part goes to SAP now; a room-charged part follows with the folio
     // and a house-account part is not revenue, so each shilling is invoiced once.
     if (!Money.of(t.paid).isZero()) await this.enqueueSapSale(q, check, t);
@@ -426,6 +433,113 @@ export class PosSettlementService {
       await event(q, propertyId, check.id, 'refunded', { number, tender: pay.tender, amount: amount.toString(), reason: input.reason });
       await this.audit.record({ action: 'pos.refund', entityType: 'pos_check', entityId: check.id, propertyId, reason: input.reason, newValues: { refundId: r.id, number, amount: amount.toString() } });
       return { refund: { id: r.id, number, tender: pay.tender, amount: amount.toString() }, check: await this.checks.view(q, propertyId, check.id) };
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Item returns (POS-11, S15, S16, CAT07, CAT08, LAT05)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Takes back items from a paid bill: refunds what the guest paid for them,
+   * credits SAP, and undoes exactly the loyalty those items carried (points or
+   * credit used on them come back; points earned on them are reversed).
+   */
+  async returnItems(propertyId: string, checkId: string, input: { lines: Array<{ lineId: string; quantity: string }>; reason: string; approval?: ApprovalInputT }) {
+    return this.db.tx(async (q) => {
+      const check = await this.checks.lock(q, propertyId, checkId, false);
+      if (check.status !== 'closed') throw conflict(`Only a closed bill can take returns; ${check.number} is ${check.status}`, 'check_not_closed');
+      const { rows: [c] } = await q.query<{ settlement: string }>('SELECT settlement FROM pos_checks WHERE id = $1', [check.id]);
+      if (c.settlement !== 'payment') {
+        throw conflict(c.settlement === 'room_charge' ? 'This bill went to a room: correct it on the guest folio' : 'Returns are only taken on bills paid at the till', 'return_not_supported');
+      }
+      if (!input.lines.length) throw new BadRequestException('Choose the items being returned');
+      const { rows: lines } = await q.query<{ id: string; name: string; quantity: string; amount: string; returned: string; status: string; sapItemCode: string | null; chargeCode: string; vat: string | null }>(
+        `SELECT l.id, l.name, l.quantity::text AS quantity, l.amount, l.status, l.charge_code AS "chargeCode", mi.sap_item_code AS "sapItemCode",
+                (SELECT code FROM unnest(cc.tax_codes) AS code WHERE code LIKE 'O%' LIMIT 1) AS vat,
+                coalesce((SELECT sum(rl.quantity) FROM pos_return_lines rl WHERE rl.line_id = l.id), 0)::text AS returned
+           FROM pos_check_lines l JOIN menu_items mi ON mi.id = l.item_id JOIN charge_codes cc ON cc.code = l.charge_code
+          WHERE l.check_id = $1 AND l.id = ANY($2) FOR UPDATE OF l`,
+        [check.id, input.lines.map((l) => l.lineId)],
+      );
+      const items = input.lines.map((x) => {
+        const l = lines.find((r) => r.id === x.lineId);
+        if (!l || l.status === 'cancelled' || l.status === 'wasted') throw new NotFoundException('Line not found on this bill');
+        const left = Money.of(l.quantity).subtract(l.returned);
+        if (Money.of(x.quantity).isZero() || Money.of(x.quantity).compare(left) > 0) throw new BadRequestException(`At most ${Number(left.toString())} of ${l.name} can be returned`);
+        const amount = Money.of(l.amount).multiply(x.quantity).divide(l.quantity);
+        return { line: l, quantity: x.quantity, amount, left };
+      });
+      const total = Money.sum(items.map((i) => i.amount));
+      const { rows: pays } = await q.query<{ id: string; tender: string; refundable: string }>(
+        `SELECT p.id, p.tender::text AS tender,
+                (p.amount - coalesce((SELECT sum(r.amount) FROM pos_refunds r WHERE r.payment_id = p.id), 0))::numeric(18,2)::text AS refundable
+           FROM pos_payments p WHERE p.check_id = $1 AND p.status = 'confirmed' ORDER BY (p.tender = 'cash'), p.received_at FOR UPDATE OF p`,
+        [check.id],
+      );
+      const refundable = Money.sum(pays.map((p) => Money.of(p.refundable)));
+      if (total.compare(refundable) > 0) throw conflict(`Only ${refundable.format()} of this bill can still be refunded`, 'refund_too_large');
+      const approvalId = await this.approvals.approve({
+        permission: 'approve.refund', propertyId, action: 'pos.return', entityType: 'pos_check', entityId: check.id, reason: input.reason,
+        approval: input.approval, details: { check: check.number, amount: total.toString(), lines: items.map((i) => ({ name: i.line.name, quantity: i.quantity })) },
+      });
+      const day = await this.days.currentDay(q, await outletById(q, check.outletId), true);
+      const businessDate = day!.businessDate;
+      const returnId = randomUUID();
+      const number = await this.numbering.next(propertyId, 'POS_RETURN');
+      // The loyalty effect is computed under the sale's own rules (LOY14).
+      const effect = await this.loyalty.onReturn(q, {
+        propertyId, checkId: check.id, returnId, businessDate,
+        lines: items.map((i) => ({
+          lineId: i.line.id,
+          returned: new Decimal(i.quantity).dividedBy(i.line.quantity).toString(),
+          kept: new Decimal(i.left.toString()).minus(i.quantity).dividedBy(i.line.quantity).toString(),
+        })),
+      });
+      await q.query(
+        `INSERT INTO pos_returns (id, property_id, number, check_id, amount, reason, approval_id, business_date, points_restored, points_reversed, wallet_restored, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [returnId, propertyId, number, check.id, total.toString(), input.reason, approvalId, businessDate, effect.pointsRestored, effect.pointsReversed, effect.walletRestored, actorId()],
+      );
+      for (const i of items) {
+        await q.query('INSERT INTO pos_return_lines (return_id, property_id, line_id, quantity, amount) VALUES ($1, $2, $3, $4, $5)', [returnId, propertyId, i.line.id, i.quantity, i.amount.toString()]);
+      }
+      // Money back to the guest, card and M-PESA first, then cash from the drawer.
+      let due = total;
+      const refunds: Array<{ number: string; tender: string; amount: string }> = [];
+      for (const p of pays) {
+        if (due.isZero()) break;
+        const take = Money.of(p.refundable).compare(due) < 0 ? Money.of(p.refundable) : due;
+        if (take.isZero()) continue;
+        const shiftId = p.tender === 'cash' ? await this.openShift(q, propertyId) : null;
+        if (p.tender === 'cash' && !shiftId) throw conflict('Open your cashier shift to pay a cash refund from the drawer', 'no_open_shift');
+        const rf = await this.numbering.next(propertyId, 'REFUND');
+        await q.query(
+          `INSERT INTO pos_refunds (property_id, number, check_id, payment_id, tender, amount, reason, approval_id, shift_id, business_date, created_by, return_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [propertyId, rf, check.id, p.id, p.tender, take.toString(), input.reason, approvalId, shiftId, businessDate, actorId(), returnId],
+        );
+        refunds.push({ number: rf, tender: p.tender, amount: take.toString() });
+        due = due.subtract(take);
+      }
+      // SAP credit note for what came back (SAP-04); the original invoice is never edited.
+      const outlet = await outletById(q, check.outletId);
+      await this.outbox.enqueue({
+        propertyId,
+        eventType: 'AR_CREDIT_NOTE',
+        externalRef: number,
+        payload: {
+          documentNumber: number, cardCode: 'C-WALKIN', docDate: businessDate, currency: 'KES', folioNumber: null, originalDocument: check.number,
+          lines: items.filter((i) => !i.amount.isZero()).map((i) => ({
+            itemCode: i.line.sapItemCode ?? `POS-${i.line.chargeCode}`, description: `${Number(i.quantity)} × ${i.line.name} (return)`, quantity: '1',
+            unitPriceInclTax: i.amount.toString(), taxCode: i.line.vat ?? 'TBC', revenueCentre: outlet.revenueCentre, dimension2Code: outlet.sapDimension2Code,
+            warehouseCode: outlet.issuingWarehouseCode ?? undefined,
+          })),
+        },
+      });
+      await event(q, propertyId, check.id, 'items_returned', { number, amount: total.toString(), refunds, loyalty: effect });
+      await this.audit.record({ action: 'pos.return', entityType: 'pos_check', entityId: check.id, propertyId, reason: input.reason, newValues: { returnId, number, amount: total.toString(), refunds, loyalty: effect } });
+      return { return: { id: returnId, number, amount: total.toString(), refunds, loyalty: effect }, check: await this.checks.view(q, propertyId, check.id) };
     });
   }
 }

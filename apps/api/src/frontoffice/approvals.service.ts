@@ -15,6 +15,8 @@ export interface ApprovalRequest {
   reason: string;
   approval?: ApprovalInputT;
   details?: Record<string, unknown>;
+  /** User who prepared the record and so may not approve it (maker-checker). */
+  notBy?: string | null;
 }
 
 /**
@@ -36,12 +38,16 @@ export class ApprovalsService {
     if (!actor) throw new ForbiddenException('Not signed in');
 
     let approverId = actor.id;
-    if (!hasPermission(actor.roles, req.permission)) {
+    // Maker-checker: the user who prepared the record cannot also approve it.
+    const preparedByActor = !!req.notBy && req.notBy === actor.id;
+    if (!hasPermission(actor.roles, req.permission) || preparedByActor) {
       if (!req.approval) {
         throw new ForbiddenException({
           statusCode: 403,
           error: 'approval_required',
-          message: `This needs approval from a user with ${req.permission}`,
+          message: preparedByActor
+            ? `You prepared this, so a second person with ${req.permission} must approve it`
+            : `This needs approval from a user with ${req.permission}`,
           permission: req.permission,
         });
       }
@@ -54,7 +60,7 @@ export class ApprovalsService {
           message: `Approval rejected: the approver's credentials are wrong or they lack ${req.permission} at this property`,
         });
       }
-      if (approver.id === actor.id) throw new ForbiddenException('You cannot approve your own request');
+      if (approver.id === actor.id || approver.id === req.notBy) throw new ForbiddenException('You cannot approve your own request');
       approverId = approver.id;
     }
 

@@ -142,6 +142,24 @@ describe('mapping', () => {
     expect(() => mapJob(bad)).toThrow(/not a decimal/);
   });
 
+  it('maps a loyalty journal and refuses one without G/L accounts (CLUB07)', () => {
+    const job = (account: string): ClaimedJob => ({
+      ...invoiceJob('CB-202610-1-SW'),
+      eventType: 'LOYALTY_JOURNAL',
+      payload: {
+        kind: 'CASHBACK', docDate: '2026-10-31', memo: 'Club cashback 2026-10 regular SW',
+        lines: [{ account, debit: '750.00', credit: '0.00' }, { account: '210500', debit: '0.00', credit: '750.00' }],
+      },
+    });
+    const mapped = mapJob(job('612000'));
+    expect(mapped.entity).toBe('JournalEntries');
+    expect(mapped.body.JournalEntryLines).toEqual([
+      expect.objectContaining({ AccountCode: '612000', Debit: 750, Credit: 0, BPLID: 2, CostingCode: 'SW' }),
+      expect.objectContaining({ AccountCode: '210500', Debit: 0, Credit: 750 }),
+    ]);
+    expect(() => mapJob(job('UNMAPPED'))).toThrow(/G\/L accounts/);
+  });
+
   it('escapes OData string literals', () => {
     expect(odataString("K1'X")).toBe("'K1''X'");
   });

@@ -1,8 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { addDays, hasPermission, Money, nightsBetween } from '@hotel/shared';
 import { AuditService } from '../audit/audit.service';
 import { DbService, Queryable } from '../db/db.service';
 import { requestContext } from '../db/request-context';
+import { LoyaltyCheckoutService } from '../loyalty/checkout.service';
 import { assertNoOpenChecksForStay, assertOutletDaysClosed } from '../pos/common';
 import { ApprovalsService } from './approvals.service';
 import { ApprovalInputT, businessDate, conflict } from './common';
@@ -63,6 +64,7 @@ export class FrontDeskService {
     private readonly folios: FoliosService,
     private readonly approvals: ApprovalsService,
     private readonly audit: AuditService,
+    @Inject(forwardRef(() => LoyaltyCheckoutService)) private readonly loyalty: LoyaltyCheckoutService,
   ) {}
 
   private actor(): string | null {
@@ -461,6 +463,7 @@ export class FrontDeskService {
 
       if (input.tenders?.length) await this.folios.recordTenders(q, folio, input.tenders);
       let balance = Money.of((await this.folios.balance(q, folio.id)).balance);
+      const cityLedger = !!input.creditTransfer && balance.compare(0) > 0;
       if (input.creditTransfer && balance.compare(0) > 0) {
         const approvalId = await this.approvals.approve({
           permission: 'approve.credit_transfer', propertyId, action: 'folio.credit_transfer', entityType: 'folio', entityId: folio.id,
@@ -494,10 +497,13 @@ export class FrontDeskService {
         content: {
           property: await this.folios.header(q, propertyId), folioNumber: folio.number, stayNumber: stay.number, ...info,
           charges: lines.charges, payments: lines.payments.filter((p) => p.status === 'confirmed'), taxSummary: lines.taxSummary, totals,
-          fiscal: { status: 'not_submitted', note: 'eTIMS submission is not yet integrated (INT-02)' },
+          fiscal: { status: 'not_submitted', note: 'KRA TIMS submission is not yet integrated (INT-02)' },
         },
       });
       await q.query(`UPDATE folios SET status = 'closed', closed_at = now(), closed_by = $2, finalised_at = now() WHERE id = $1`, [folio.id, this.actor()]);
+      // Points or cashback on room-charged bills and the stay itself are awarded once the folio is settled;
+      // a company bill waits until finance confirms the company paid (S03, LAT08).
+      await this.loyalty.onFolioSettled(q, { propertyId, folioId: folio.id, stayId: stay.id, cityLedger, businessDate: bd });
       await q.query(`UPDATE stays SET status = 'checked_out', checked_out_at = now(), checked_out_by = $2 WHERE id = $1`, [stay.id, this.actor()]);
       // Free tonight onward on the current room; past nights stay on record.
       const alloc = await this.rooms.activeAllocation(q, stay.id);

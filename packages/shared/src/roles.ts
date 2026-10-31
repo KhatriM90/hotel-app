@@ -80,6 +80,20 @@ export const PERMISSIONS = {
   'pos.availability': ['owner', 'area_manager', 'manager', 'cashier', 'waiter', 'bartender', 'kitchen'],
   'pos.report': ['owner', 'admin', 'area_manager', 'group_accounts', 'manager', 'accountant'],
 
+  // Loyalty and club membership (LOY15, CLUB01, CAT11). Cashiers identify
+  // members and ask for verified redemptions; managers approve adjustments and
+  // merges; programme administrators change rules; finance runs month end.
+  'loyalty.lookup': ['owner', 'admin', 'area_manager', 'group_accounts', 'manager', 'receptionist', 'cashier', 'waiter', 'bartender', 'accountant'],
+  'loyalty.enrol': ['owner', 'area_manager', 'manager', 'receptionist', 'cashier', 'waiter', 'bartender'],
+  'loyalty.redeem': ['owner', 'area_manager', 'manager', 'receptionist', 'cashier', 'waiter', 'bartender'],
+  // Full member profile and history; POS staff see a masked summary only.
+  'loyalty.read': ['owner', 'admin', 'area_manager', 'group_accounts', 'manager', 'receptionist', 'accountant'],
+  'loyalty.manage': ['owner', 'area_manager', 'manager', 'receptionist'],
+  'loyalty.club.manage': ['owner', 'area_manager', 'manager'],
+  'loyalty.programme': ['owner', 'admin', 'area_manager'],
+  'loyalty.finance': ['owner', 'group_accounts', 'accountant'],
+  'loyalty.report': ['owner', 'admin', 'area_manager', 'group_accounts', 'manager', 'accountant'],
+
   // Approvals (SEC-02). Holders approve their own actions; others need a holder's sign-off.
   'approve.rate_override': ['owner', 'area_manager', 'manager'],
   'approve.fee_waiver': ['owner', 'area_manager', 'manager'],
@@ -95,6 +109,10 @@ export const PERMISSIONS = {
   'approve.cash_out': ['owner', 'area_manager', 'manager'],
   'approve.cash_variance': ['owner', 'area_manager', 'manager', 'group_accounts', 'accountant'],
   'approve.house_account': ['owner', 'area_manager', 'manager'],
+  'approve.loyalty_adjustment': ['owner', 'area_manager', 'manager'],
+  'approve.loyalty_merge': ['owner', 'area_manager', 'manager'],
+  'approve.club_override': ['owner', 'area_manager'],
+  'approve.cashback_batch': ['owner', 'group_accounts'],
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

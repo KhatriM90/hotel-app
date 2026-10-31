@@ -162,6 +162,54 @@ Migrations `0014`–`0015`; API in `apps/api/src/pos`; waiter, bar and kitchen t
 - SAP credit memo for POS refunds; SAP till and M-PESA clearing accounts per property (SAP-16); the walk-in customer code.
 - Stock deduction and recipes in SAP (SAP-18).
 
+## Requirement IDs: loyalty and club PR (Loyalty Addendum v1.2)
+
+The Loyalty Development Addendum v1.2 amends the brief and **replaces ADV-02**. This PR builds core loyalty (LOY01, LOY05, LOY11 to LOY28) and club membership (CLUB01 to CLUB07). The advanced options LOY02 to LOY10 come later.
+
+Migration `0016`; API in `apps/api/src/loyalty`, with hooks in POS checkout, POS returns, folio settlement and the maintenance tick; tablet screens in `apps/pwa/src/loyalty.ts`; back-office screens in `apps/backoffice/src/loyalty`; SAP journal mapping in `apps/sap-worker/src/mapping.ts`; demo members in `apps/api/src/demo/loyalty-demo.ts`; tests in `apps/api/test/loyalty.e2e-spec.ts` (19) and `packages/shared/src/loyalty.test.ts` (16). Manual checklist and customer demo script: `docs/how-to-test-loyalty.md`.
+
+| ID | Status | Notes |
+|---|---|---|
+| ADV-02 | Replaced | By the addendum (LOY and CLUB below). |
+| LOY01 | Done | 1 point per KES 100 eligible, 1 point = KES 1, minimum redemption 100, 20% redemption cap, all configurable as dated programme versions. |
+| LOY02–LOY10 | Not started | Advanced options, later release. |
+| LOY05 | Done (core) | Excluded charge codes, menu categories and items, participating outlets, alcohol on/off for rewards. Per-category earning rates are advanced (later). |
+| LOY11 | Done | Enrol at reception or at the till; one member per phone, with a duplicate warning; corporate members linked to a company. |
+| LOY12 | Done | Points = floor(eligible / unit) once per earning event, on the net amount (excluding VAT and levy); line allocations stored for returns; daily earning cap. |
+| LOY13 | Done | Redeem on an open bill with a 15-minute hold, committed when the bill closes and released on void, removal or expiry; capped and verified. |
+| LOY14 | Done | Points expire after 12 months (oldest first); restored points get a grace period; the settings version in force at the sale is kept for its returns. |
+| LOY15 | Done | Every movement is an append-only ledger event with the user, property, outlet, bill and reason; POS staff see a masked member. Corrections need a manager's approval. |
+| LOY16 | Done | Members, ledger events, lots, holds, verifications, programme versions, club tiers and overrides, accruals and batches. |
+| LOY17 | Done | Tablet: lookup, enrol, reward preview, redeem, remove. Back office: members, history, programme, cashback, reports. |
+| LOY18 | Partial (mock) | Wallet redemptions and cashback post a journal to SAP (JournalEntries). Finance maps the cashback expense and wallet liability G/L accounts on Club cashback (migration `0017`, audited, every change kept); journals made before the mapping are held and go to SAP once when it is saved. Points are a discount on the sale, so they go to SAP inside the A/R invoice. |
+| LOY19 | Done | Movement report (opening + movements = closing, ledger vs lots), liability by property and expiry, pending settlement, exceptions. |
+| LOY20 | Partial | The reward is a discount line before VAT and levy (switchable in settings). Returns restore and reverse by line; a return is a separate document with a SAP credit note. Confirmed by Manish Khatri (31 Oct 2026). The KRA TIMS invoice and credit note wait for INT-02. |
+| LOY21 | Partial | Issued, redeemed, expired and outstanding points by property and month at the point value. Breakage forecast not yet. |
+| LOY22 | Done | OTP (shown on screen until there is an SMS gateway) or the member card QR before every redemption; staff accounts flagged and excluded on their own bills; exceptions for many bills a day, one waiter's share and failed codes; daily earning cap. Reprint-before-attach detection is not built. |
+| LOY23 | Partial | Balance on every receipt; a member page by secure link with balances, expiring points and the statement (printable). SMS and WhatsApp after each sale wait for a gateway. |
+| LOY24 | Partial | Separate programme and marketing consent; 18+ confirmation; anonymise keeps the ledger. The inactive-member retention period is not set yet. |
+| LOY25 | Done | Points and credit cannot pay for alcohol unless the setting is turned on. |
+| LOY26 | Done | Stacking off by default; with stacking on, a 25% ceiling per bill and per member per month. |
+| LOY27 | Partial | Room revenue earns at checkout for direct and corporate bookings; excluded rate plans earn nothing. Redeeming against room nights is not built. |
+| LOY28 | Partial | Enrol at reception and the till; printable card with a QR code the tablet camera scans. QR self-enrolment and bulk import are not built. |
+| CLUB01 | Done | Club tiers with default discount and cashback, per-member overrides with dates and approval, membership status and dates. |
+| CLUB02 | Done | With stacking off, discount or cashback per bill (discount by default, switchable on the tablet); with stacking on, both, inside the ceiling. |
+| CLUB03 | Done | Monthly cashback from settled sales at each sale's own rate, net of returns, with minimum spend and cap. |
+| CLUB04 | Done | Preview, draft, approval by a second person, posting once per member; adjustment batches after posting. |
+| CLUB05 | Done | Wallet with lots, a 12-month expiry and a cap per bill; holds like points. |
+| CLUB06 | Done | Returns reduce the entitlement; after posting, an adjustment batch takes it back and can leave a negative wallet that blocks use. |
+| CLUB07 | Partial (mock) | Statements and reports done; SAP journals per property, with the G/L accounts finance maps in the app. |
+| LAT01–LAT16, CAT01–CAT12 | See `docs/how-to-test-loyalty.md` | LAT13 waits for KRA TIMS; LAT04 packages wait for S10. |
+
+### Defaults used in this PR (confirmed by Manish Khatri, 31 Oct 2026)
+
+- **Reward treatment:** a discount line that reduces the VAT base, so 800 points take KES 944 off a till price that includes tax. The other option (non-cash tender) stays a setting (LOY20).
+- **Club members earn cashback only**, not points. Setting.
+- **With stacking off, the club discount is the default benefit**, switchable to cashback per bill.
+- **Wallet credit can pay up to 100% of a bill** and expires after 12 months.
+- **The OTP is shown on screen** until an SMS gateway is chosen.
+- **Cashback batches are approved against the head office** (one legal entity) by a second person.
+
 ## Not yet satisfied (everything else)
 
 HK-02 onwards, MT-*, POS-14, 15, 16, 20, BIL-05, 08, 13–15, INV-*, RPT-*, SEC-05, SEC-07, SEC-08, OPS-01, OPS-06, INT-01, INT-03–06, INT-08–10, SAP-01, SAP-03, SAP-06–10, SAP-12, SAP-16–19, AT-06, AT-11, AT-12, AT-15, AT-16 and SAP-AT01–03, 07–11, 13 are **not started**. SEC-03 admin MFA is still outstanding.
@@ -173,6 +221,7 @@ KRA PIN `P000598390N`; SAP branches K1 Parklands = 1, Small World = 4, Kahama = 
 ## Decisions (Manish Khatri, 26 Oct 2026)
 
 - **eTIMS:** one registration for the group, not one per property. Fiscal invoice numbers are one group-wide sequence (migration `0008`). This replaces the brief's per-property bhfId in INT-02 and SAP-AT11.
+- **Superseded 31 Oct 2026 (Manish Khatri): the client uses KRA TIMS, not eTIMS.** Each branch has one TIMS device, all registered under the same KRA PIN. The INT-02 integration will talk to each property's device, and the fiscal numbering in `0008` must be reviewed against the per-device numbering when it is built.
 - **Outlets:** the 43 SAP outlets are the billing outlets (the brief's 21 is superseded).
 - **Catering levy:** posted as its own C1 (2%) line, separate from VAT (BIL-16).
 - **SAP Dimension 2:** short outlet codes (max 8 characters) as listed in `0008`.

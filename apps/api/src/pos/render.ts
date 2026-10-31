@@ -86,6 +86,21 @@ export function renderCheck(check: Json, property: Json): string {
     : '';
   const house = check.houseAccount ? `<tr><td>House account ${esc(check.houseAccount.name)}</td><td class="n">${money(check.houseAccount.amount)}</td></tr>` : '';
   const refunds = (check.refunds as Json[]).map((r) => `<tr><td>Refund ${esc(r.number)} (${esc(label(r.tender))})</td><td class="n">−${money(r.amount)}</td></tr>`).join('');
+  const returns = ((check.returns ?? []) as Json[]).map((r) => `<tr><td>Return ${esc(r.number)}</td><td class="n">−${money(r.amount)}</td></tr>`).join('');
+  const lo = check.loyalty as Json | null;
+  const memberDiscount = Number(t.memberDiscount) ? `<tr><td>Member discount</td><td class="n">−${money(t.memberDiscount)}</td></tr>` : '';
+  const rewards = Number(t.rewards) ? `<tr><td>Rewards used</td><td class="n">−${money(t.rewards)}</td></tr>` : '';
+  const loyalty = lo
+    ? `<hr><div class="c"><b>YeaStay Rewards</b> · Member ${esc(lo.number)}</div><table>
+${Number(lo.pointsRedeemed) ? `<tr><td>Points used</td><td class="n">${esc(lo.pointsRedeemed)}</td></tr>` : ''}
+${Number(lo.walletRedeemed) ? `<tr><td>Wallet credit used</td><td class="n">${money(lo.walletRedeemed)}</td></tr>` : ''}
+${lo.final && Number(lo.pointsEarned) ? `<tr><td>Points earned</td><td class="n">${esc(lo.pointsEarned)}</td></tr>` : ''}
+${lo.final && Number(lo.pointsPending) ? `<tr><td>Points pending (room)</td><td class="n">${esc(lo.pointsPending)}</td></tr>` : ''}
+${lo.final && Number(lo.cashbackPending) ? `<tr><td>Cashback accruing</td><td class="n">${money(lo.cashbackPending)}</td></tr>` : ''}
+${lo.final ? `<tr><td>Points balance</td><td class="n">${esc(lo.closingPoints)}</td></tr>` : ''}
+${lo.final && Number(lo.closingWallet) ? `<tr><td>Wallet balance</td><td class="n">${money(lo.closingWallet)}</td></tr>` : ''}
+</table>${lo.note ? `<div class="c">${esc(lo.note)}</div>` : ''}${!lo.final ? '<div class="c">Points are added when the bill is settled.</div>' : ''}`
+    : '';
   const sign = check.roomCharge
     ? `<hr><div>Room ${esc(check.roomNumber ?? '')} · ${esc(check.guestName ?? '')}</div><div>Acknowledged: ${esc(check.roomCharge.signedName)} (${esc(
         label(check.roomCharge.acknowledgementMethod),
@@ -100,14 +115,15 @@ export function renderCheck(check: Json, property: Json): string {
 <div>Server ${esc(check.waiter)} · ${esc(check.businessDate)}</div>
 <hr><table>${lines || '<tr><td>No items</td></tr>'}</table><hr>
 <table>
+${memberDiscount}${rewards}
 <tr class="strong"><td>TOTAL KES</td><td class="n">${money(t.total)}</td></tr>
 ${taxRows}
-${pays}${room}${house}${refunds}
+${pays}${room}${house}${refunds}${returns}
 ${!closed && check.status === 'open' ? `<tr class="strong"><td>BALANCE DUE</td><td class="n">${money(t.balance)}</td></tr>` : ''}
 </table>
-${sign}
+${sign}${loyalty}
 <hr><div class="c">Prices include VAT and catering levy.</div>
-<div class="c">eTIMS fiscal receipt not yet issued (integration pending).</div>
+<div class="c">KRA TIMS fiscal receipt not yet issued (integration pending).</div>
 <footer>Thank you · Powered by YeaStay</footer>`,
   );
 }

@@ -85,6 +85,11 @@ const RoomCharge = z.object({
 });
 const HouseAccountCharge = z.object({ houseAccountCode: Code, reason: Reason, approval: ApprovalInput });
 const Refund = z.object({ paymentId: Uuid, amount: Amount, reason: Reason, reference: z.string().trim().max(60).nullish(), approval: ApprovalInput });
+const ReturnItems = z.object({
+  lines: z.array(z.object({ lineId: Uuid, quantity: Quantity.refine((v) => Number(v) > 0, 'must be more than 0') })).min(1).max(100),
+  reason: Reason,
+  approval: ApprovalInput,
+});
 const Reprint = z.object({ reason: Reason });
 const TicketStatus = z.object({ status: z.enum(['preparing', 'ready', 'done']) });
 const CloseDay = z.object({ businessDate: IsoDate });
@@ -319,6 +324,15 @@ export class PosController {
   @Idempotent()
   refund(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string, @Body(new ZodPipe(Refund)) b: Body<typeof Refund>) {
     return this.settlement.refund(p.id, id, b);
+  }
+
+  /** Items brought back on a paid bill: refund, SAP credit note and loyalty undone (S15, S16). */
+  @Post('checks/:checkId/returns')
+  @HttpCode(200)
+  @RequirePermission('pos.refund')
+  @Idempotent()
+  returnItems(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string, @Body(new ZodPipe(ReturnItems)) b: Body<typeof ReturnItems>) {
+    return this.settlement.returnItems(p.id, id, b);
   }
 }
 
