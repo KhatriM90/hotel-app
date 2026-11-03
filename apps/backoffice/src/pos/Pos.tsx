@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { hasPermission, HOUSE_ACCOUNT_KINDS, SERVICE_TYPES } from '@hotel/shared';
+import { addDays, hasPermission, HOUSE_ACCOUNT_KINDS, SERVICE_TYPES } from '@hotel/shared';
 import { api } from '../api';
-import { base, ErrorText, Field, kes, label, Modal, openPrintable, StatusBadge, useAction, useLoad, useSession } from '../ui';
+import { base, DownloadButtons, ErrorText, Field, kes, label, Modal, openPrintable, StatusBadge, useAction, useLoad, useSession } from '../ui';
 
 /**
  * Back office for the point of sale: trading days and the Z close, business-day
  * cut-off and outlet POS settings (CFG-01, CFG-03), outlet price lists and
  * availability (POS-03, POS-12, POS-19), cashier shifts and variance review
- * (POS-13), house accounts (POS-18) and sales (RPT-03 basics).
+ * (POS-13), house accounts (POS-18) and sales (RPT-03), each downloadable as CSV or PDF (RPT-06).
  */
 
 const pos = (code: string) => `${base(code)}/pos`;
@@ -137,11 +137,13 @@ function CloseOutletDay({ outlet, onClose, onDone }: { outlet: PosOutletStatus; 
         {closed ? (
           <>
             <button className="ys-btn ghost" onClick={() => openPrintable(`${pos(property.code)}/days/${closed.dayId}/print`)}>Print Z report</button>
+            <DownloadButtons path={`${base(property.code)}/reports/pos-days/${closed.dayId}/export`} />
             <button className="ys-btn" onClick={onDone}>Done</button>
           </>
         ) : (
           <>
             <button className="ys-btn ghost" onClick={() => openPrintable(`${pos(property.code)}/days/${outlet.dayId}/print`)}>Print X report</button>
+            <DownloadButtons path={`${base(property.code)}/reports/pos-days/${outlet.dayId}/export`} />
             <button className="ys-btn ghost" onClick={onClose}>Cancel</button>
             <button
               className="ys-btn"
@@ -180,6 +182,7 @@ function OutletHistory({ outlet, onClose }: { outlet: PosOutletStatus; onClose: 
               <td className="ys-actions-cell">
                 <button className="ys-btn small ghost" onClick={() => setOpen(open === d.id ? null : d.id)}>{open === d.id ? 'Hide' : 'Totals'}</button>
                 <button className="ys-btn small ghost" onClick={() => openPrintable(`${pos(property.code)}/days/${d.id}/print`)}>Print</button>
+                <DownloadButtons path={`${base(property.code)}/reports/pos-days/${d.id}/export`} />
               </td>
             </tr>
           ))}
@@ -714,6 +717,8 @@ function ReviewShift({ shift, onClose, onDone }: { shift: ShiftRow; onClose: () 
 export function PosShiftsPage() {
   const { property } = useSession();
   const [filter, setFilter] = useState<'all' | 'open' | 'unreviewed'>('unreviewed');
+  const [from, setFrom] = useState(addDays(property.currentBusinessDate, -6));
+  const [to, setTo] = useState(property.currentBusinessDate);
   const { data, error, reload } = useLoad(
     () => api.get<ShiftRow[]>(`${pos(property.code)}/shifts${filter === 'open' ? '?status=open' : filter === 'unreviewed' ? '?unreviewed=true' : ''}`),
     [property.code, filter],
@@ -729,6 +734,12 @@ export function PosShiftsPage() {
             <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)}>{f === 'unreviewed' ? 'Variances to review' : label(f)}</button>
           ))}
         </div>
+      </div>
+      <div className="ys-page-head">
+        <span className="ys-muted">Cash shift report by trading day (RPT-04)</span>
+        <Field label="From"><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+        <Field label="To"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+        <DownloadButtons path={`${base(property.code)}/reports/cash-shifts/export?from=${from}&to=${to}`} disabled={!from || !to || from > to} />
       </div>
       <ErrorText error={error} />
       <table className="ys-table">
@@ -751,18 +762,23 @@ export function PosShiftsPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Sales (RPT-03 basics)
+// Sales (RPT-03)
 // ---------------------------------------------------------------------------
+interface SalesDetail extends Totals {
+  byOutlet: Array<{ code: string; name: string; checks: number; netSales: string }>;
+  byItem: Array<{ name: string; category: string | null; quantity: string; discounts: string; amount: string }>;
+  voids: Array<{ number: string; businessDate: string; outlet: string; waiter: string; reason: string | null; listValue: string }>;
+  refundList: Array<{ number: string; businessDate: string; checkNumber: string; outlet: string; tender: string; amount: string; reason: string; refundedBy: string | null }>;
+}
+
 export function PosSalesPage() {
   const { property } = useSession();
   const [from, setFrom] = useState(property.currentBusinessDate);
   const [to, setTo] = useState(property.currentBusinessDate);
   const [outlet, setOutlet] = useState('');
   const outlets = useLoad(() => api.get<PosOutletStatus[]>(`${pos(property.code)}/outlets`), [property.code]);
-  const { data, error } = useLoad(
-    () => api.get<Totals & { byOutlet: Array<{ code: string; name: string; checks: number; netSales: string }> }>(`${pos(property.code)}/reports/sales?from=${from}&to=${to}${outlet ? `&outlet=${outlet}` : ''}`),
-    [property.code, from, to, outlet],
-  );
+  const filter = `from=${from}&to=${to}${outlet ? `&outlet=${outlet}` : ''}`;
+  const { data, error } = useLoad(() => api.get<SalesDetail>(`${pos(property.code)}/reports/sales?${filter}`), [property.code, filter]);
   return (
     <>
       <div className="ys-page-head">
@@ -776,6 +792,7 @@ export function PosSalesPage() {
             {(outlets.data ?? []).map((o) => <option key={o.code} value={o.code}>{o.name}</option>)}
           </select>
         </Field>
+        <DownloadButtons path={`${base(property.code)}/reports/pos-sales/export?${filter}`} disabled={!from || !to || from > to} />
       </div>
       <p className="ys-muted">By trading date. Revenue is counted once, from closed checks; room charges are a way of settling, and house accounts are not sales.</p>
       <ErrorText error={error} />
@@ -783,11 +800,46 @@ export function PosSalesPage() {
         <>
           <TotalsView t={data} />
           {!outlet && (
-            <table className="ys-table compact">
-              <thead><tr><th>Outlet</th><th>Checks</th><th>Net sales</th></tr></thead>
-              <tbody>{data.byOutlet.map((o) => <tr key={o.code}><td>{o.name}</td><td>{o.checks}</td><td>{kes(o.netSales)}</td></tr>)}</tbody>
-            </table>
+            <>
+              <h2>By outlet</h2>
+              <table className="ys-table compact">
+                <thead><tr><th>Outlet</th><th>Checks</th><th>Net sales</th></tr></thead>
+                <tbody>{data.byOutlet.map((o) => <tr key={o.code}><td>{o.name}</td><td>{o.checks}</td><td>{kes(o.netSales)}</td></tr>)}</tbody>
+              </table>
+            </>
           )}
+          <h2>By product</h2>
+          <table className="ys-table compact">
+            <thead><tr><th>Product</th><th>Category</th><th>Qty</th><th>Discounts</th><th>Net sales</th></tr></thead>
+            <tbody>
+              {data.byItem.length === 0 && <tr><td colSpan={5} className="ys-muted">No sales in this period.</td></tr>}
+              {data.byItem.map((i) => (
+                <tr key={`${i.name}|${i.category}`}><td>{i.name}</td><td>{i.category ?? '—'}</td><td>{Number(i.quantity)}</td><td>{kes(i.discounts)}</td><td>{kes(i.amount)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+          <div>
+            <div>
+              <h2>Voided checks</h2>
+              <table className="ys-table compact">
+                <thead><tr><th>Check</th><th>Date</th><th>Outlet</th><th>Waiter</th><th>Reason</th><th>Value</th></tr></thead>
+                <tbody>
+                  {data.voids.length === 0 && <tr><td colSpan={6} className="ys-muted">None.</td></tr>}
+                  {data.voids.map((v) => <tr key={v.number}><td>{v.number}</td><td>{v.businessDate}</td><td>{v.outlet}</td><td>{v.waiter}</td><td>{v.reason ?? '—'}</td><td>{kes(v.listValue)}</td></tr>)}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <h2>Refunds</h2>
+              <table className="ys-table compact">
+                <thead><tr><th>Refund</th><th>Date</th><th>Check</th><th>Method</th><th>Reason</th><th>Amount</th></tr></thead>
+                <tbody>
+                  {data.refundList.length === 0 && <tr><td colSpan={6} className="ys-muted">None.</td></tr>}
+                  {data.refundList.map((r) => <tr key={r.number}><td>{r.number}</td><td>{r.businessDate}</td><td>{r.checkNumber}</td><td>{label(r.tender)}</td><td>{r.reason}</td><td>{kes(r.amount)}</td></tr>)}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </>
       )}
     </>

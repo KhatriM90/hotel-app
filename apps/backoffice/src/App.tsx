@@ -10,6 +10,7 @@ import { RequestsPage } from './frontdesk/Requests';
 import { NewReservationPage, ReservationDetailPage, ReservationsPage } from './frontdesk/Reservations';
 import { RatesPage, RoomsPage } from './frontdesk/Rooms';
 import { PosDaysPage, PosMenuPage, PosSalesPage, PosSettingsPage, PosShiftsPage } from './pos/Pos';
+import { FlashReportPage, HotelReportPage } from './reports/Reports';
 
 /** Header business date; turns amber when the day close is overdue. */
 function BusinessDateBadge({ property }: { property: Property }) {
@@ -26,6 +27,7 @@ type Page =
   | 'desk' | 'calendar' | 'reservations' | 'new-reservation' | 'reservation' | 'folio'
   | 'guests' | 'guest' | 'requests' | 'rooms' | 'rates'
   | 'pos-days' | 'pos-sales' | 'pos-shifts' | 'pos-menu' | 'pos-settings'
+  | 'report-flash' | 'report-hotel'
   | 'overview' | 'outlets' | 'integration';
 
 /** Main navigation; each entry shows only for users holding its permission (the API enforces the same, SEC-01). */
@@ -37,6 +39,8 @@ const NAV: Array<[Page, string, Permission?]> = [
   ['requests', 'Guest requests', 'guest_request.manage'],
   ['rooms', 'Rooms', 'room.read'],
   ['rates', 'Rates and policy', 'rate.read'],
+  ['report-flash', 'Daily flash', 'report.read'],
+  ['report-hotel', 'Hotel report', 'report.read'],
   ['pos-days', 'POS day close', 'pos.report'],
   ['pos-sales', 'POS sales', 'pos.report'],
   ['pos-shifts', 'Cash shifts', 'pos.report'],
@@ -274,6 +278,8 @@ export function App() {
               {page === 'requests' && <RequestsPage key={current} />}
               {page === 'rooms' && <RoomsPage key={current} />}
               {page === 'rates' && <RatesPage key={current} />}
+              {page === 'report-flash' && <FlashReportPage key={current} />}
+              {page === 'report-hotel' && <HotelReportPage key={current} />}
               {page === 'pos-days' && <PosDaysPage key={current} />}
               {page === 'pos-sales' && <PosSalesPage key={current} />}
               {page === 'pos-shifts' && <PosShiftsPage key={current} />}
