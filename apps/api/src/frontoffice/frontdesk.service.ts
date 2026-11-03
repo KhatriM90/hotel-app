@@ -1,5 +1,6 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { addDays, hasPermission, Money, nightsBetween } from '@hotel/shared';
+import { APP_CONFIG, AppConfig } from '../config';
 import { AuditService } from '../audit/audit.service';
 import { DbService, Queryable } from '../db/db.service';
 import { requestContext } from '../db/request-context';
@@ -63,6 +64,7 @@ export class FrontDeskService {
     private readonly folios: FoliosService,
     private readonly approvals: ApprovalsService,
     private readonly audit: AuditService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   private actor(): string | null {
@@ -526,11 +528,17 @@ export class FrontDeskService {
    */
   async closeDay(propertyId: string, expectedDate: string) {
     return this.db.tx(async (q) => {
-      const { rows: [p] } = await q.query<{ d: string }>(
-        'SELECT current_business_date::text AS d FROM properties WHERE id = $1 FOR NO KEY UPDATE',
+      const { rows: [p] } = await q.query<{ d: string; today: string }>(
+        `SELECT current_business_date::text AS d, (now() AT TIME ZONE timezone)::date::text AS today
+           FROM properties WHERE id = $1 FOR NO KEY UPDATE`,
         [propertyId],
       );
       if (p.d !== expectedDate) throw conflict(`The business date is ${p.d}, not ${expectedDate}; it may already have been closed`, 'stale_business_date');
+      // A day can be closed once its calendar date has started at the property,
+      // never ahead of it: that would post room nights not yet stayed.
+      if (p.d > p.today && !this.config.ALLOW_FUTURE_DAY_CLOSE) {
+        throw conflict(`${p.d} has not started yet at this property (today is ${p.today}); it cannot be closed in advance`, 'business_date_in_future');
+      }
       await assertOutletDaysClosed(q, propertyId, p.d);
       const { rows: stays } = await q.query<{ id: string }>(`SELECT id FROM stays WHERE property_id = $1 AND status = 'checked_in' ORDER BY number`, [propertyId]);
       let posted = 0;

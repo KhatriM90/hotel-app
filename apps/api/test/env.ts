@@ -13,3 +13,4 @@ process.env.WORKER_TOKEN = 'test-worker-token-test-worker-token-123';
 process.env.QUEUES_ENABLED = 'false';
 process.env.ENABLE_DEV_ENDPOINTS = 'true';
 process.env.SEED_PASSWORD = 'test-password-123';
+process.env.ALLOW_FUTURE_DAY_CLOSE = 'true';

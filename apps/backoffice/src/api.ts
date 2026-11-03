@@ -16,7 +16,10 @@ export interface Property {
   isHeadOffice: boolean;
   currency: string;
   timezone: string;
+  businessDayCutoff: string;
   currentBusinessDate: string;
+  /** What the business date should be by the clock; later than currentBusinessDate means a day close is overdue. */
+  expectedBusinessDate: string;
   sapBranchId: number | null;
 }
 
