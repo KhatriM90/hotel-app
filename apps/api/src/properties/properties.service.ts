@@ -12,6 +12,12 @@ export interface PropertyDto {
   timezone: string;
   businessDayCutoff: string;
   currentBusinessDate: string;
+  /**
+   * The business date the calendar says it should be now: today at the
+   * property, less the cut-off (so 07:59 on the 4th still counts as the 3rd).
+   * When currentBusinessDate is earlier, a day close is overdue.
+   */
+  expectedBusinessDate: string;
   sapBranchId: number | null;
   sapDimension1: string;
 }
@@ -43,6 +49,7 @@ const PROPERTY_COLUMNS = `
   id, code, name, location, is_head_office AS "isHeadOffice", currency, timezone,
   to_char(business_day_cutoff, 'HH24:MI') AS "businessDayCutoff",
   current_business_date::text AS "currentBusinessDate",
+  ((now() AT TIME ZONE timezone) - business_day_cutoff)::date::text AS "expectedBusinessDate",
   sap_branch_id AS "sapBranchId", sap_dimension1 AS "sapDimension1"`;
 
 const OUTLET_COLUMNS = `

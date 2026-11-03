@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { hasPermission, Permission } from '@hotel/shared';
+import { hasPermission, nightsBetween, Permission } from '@hotel/shared';
 import { api, ApiError, Me, OutboxEvent, Outlet, Property } from './api';
 import { Session, SessionContext } from './ui';
 import { CalendarPage } from './frontdesk/Calendar';
@@ -10,6 +10,17 @@ import { RequestsPage } from './frontdesk/Requests';
 import { NewReservationPage, ReservationDetailPage, ReservationsPage } from './frontdesk/Reservations';
 import { RatesPage, RoomsPage } from './frontdesk/Rooms';
 import { PosDaysPage, PosMenuPage, PosSalesPage, PosSettingsPage, PosShiftsPage } from './pos/Pos';
+
+/** Header business date; turns amber when the day close is overdue. */
+function BusinessDateBadge({ property }: { property: Property }) {
+  const behind = nightsBetween(property.currentBusinessDate, property.expectedBusinessDate).length;
+  if (!behind) return <span className="ys-user">Business date {property.currentBusinessDate}</span>;
+  return (
+    <span className="ys-user ys-overdue" title={`Today's business date is ${property.expectedBusinessDate}. Close the day on the Front desk page.`}>
+      Business date {property.currentBusinessDate} · {behind} day{behind > 1 ? 's' : ''} behind
+    </span>
+  );
+}
 
 type Page =
   | 'desk' | 'calendar' | 'reservations' | 'new-reservation' | 'reservation' | 'folio'
@@ -233,7 +244,7 @@ export function App() {
             ))}
           </select>
         )}
-        {property && <span className="ys-user">Business date {property.currentBusinessDate}</span>}
+        {property && <BusinessDateBadge property={property} />}
         <span className="ys-user">{me.displayName}</span>
         <a className="ys-user ys-link" href="/pwa/">Tablet app (POS, kitchen)</a>
         <button className="ys-btn" onClick={() => { api.logout(); setMe(null); }}>Sign out</button>
