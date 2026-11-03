@@ -93,6 +93,8 @@ export const PERMISSIONS = {
   'loyalty.programme': ['owner', 'admin', 'area_manager'],
   'loyalty.finance': ['owner', 'group_accounts', 'accountant'],
   'loyalty.report': ['owner', 'admin', 'area_manager', 'group_accounts', 'manager', 'accountant'],
+  // Reports (RPT-02, RPT-07, RPT-08): hotel figures and the daily flash, on screen and as CSV/PDF (RPT-06).
+  'report.read': ['owner', 'admin', 'area_manager', 'group_accounts', 'manager', 'accountant'],
 
   // Approvals (SEC-02). Holders approve their own actions; others need a holder's sign-off.
   'approve.rate_override': ['owner', 'area_manager', 'manager'],

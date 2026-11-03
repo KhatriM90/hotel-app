@@ -39,6 +39,7 @@ h1, h2, h3 { font-family: var(--ys-font-heading); font-weight: 600; margin: 0 0 
   background: var(--ys-night); color: #fff; min-height: 36px;
 }
 .ys-user { color: var(--ys-mist); font-size: 14px; }
+.ys-user.ys-overdue { color: var(--ys-amber); font-weight: 600; }
 .ys-header a.ys-link { color: var(--ys-amber); text-decoration: underline; }
 
 .ys-layout { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100% - 56px); }
@@ -84,6 +85,8 @@ table.ys-table { width: 100%; border-collapse: collapse; background: var(--ys-su
 .ys-page-head h1, .ys-page-head h2 { margin: 0; }
 .ys-page-head .spacer { flex: 1; }
 .ys-page-head .ys-field { margin: 0; }
+.ys-downloads { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.ys-downloads .ys-error { margin: 0; }
 .ys-section { margin-top: 22px; }
 .ys-card.ys-section { margin-top: 16px; }
 .ys-section h2 { font-size: 18px; }

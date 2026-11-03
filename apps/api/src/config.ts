@@ -19,6 +19,11 @@ const schema = z.object({
   WORKER_CLAIM_LEASE_SECONDS: z.coerce.number().int().min(30).default(300),
   IDEMPOTENCY_TTL_HOURS: z.coerce.number().int().positive().default(24 * 30),
   ENABLE_DEV_ENDPOINTS: bool.default('false'),
+  /**
+   * Lets the front-desk day close run past the property's calendar date. Only
+   * the automated tests set it, because they close several days in a row.
+   */
+  ALLOW_FUTURE_DAY_CLOSE: bool.default('false'),
   CORS_ORIGINS: z.string().optional(),
 });
 

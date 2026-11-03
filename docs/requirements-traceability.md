@@ -81,7 +81,7 @@ Migrations `0010`–`0012`; API in `apps/api/src/frontoffice`; reception screens
 | BIL-09 | Done | Pro forma (`PF`), running statement, final invoice (`INV`) and receipts (`RCT`) with unique, property-prefixed, gapless numbers, stored immutably with links to their booking, stay, folio or payment, and printable. Credit notes arrive with BIL-07. |
 | BIL-02 | Done | Server-side checks at posting: stay checked in, outlet belongs to the same property, room-charge flag, credit limit. POS room charges use the same checks (see the POS PR). |
 | BIL-07 | Partial | Charge reversal is a linked negative line with reason and manager approval; one reversal per charge. Refunds and credit notes not yet. |
-| BIL-10 | Partial | Basic close-day: posts each in-house stay's room night once (unique per stay and date) and advances the business date; refuses a stale date. Reconciliation, exception flags and closed-date locking not yet. |
+| BIL-10 | Partial | Basic close-day: posts each in-house stay's room night once (unique per stay and date) and advances the business date; refuses a stale date and refuses a day that has not started yet at the property (`business_date_in_future`). The back office flags an overdue close: the header and Front desk page show how many days the business date is behind the clock (`expectedBusinessDate` = local now less the cut-off). Closing stays a manual manager action (Manish, 3 Nov 2026). Reconciliation, exception flags and closed-date locking not yet. |
 | BIL-16 | Partial | Charges split VAT (O1, 16%) and catering levy (C1, 2%) as separate tax lines, configured per charge code. SAP/GL mapping arrives with posting. |
 | BIL-17 | Done | Folios, charges and outlets are property-scoped by RLS; a charge from another property's outlet is refused. |
 | SEC-02 | Partial | Approvals with a manager's username and password for rate overrides, fee waivers, charge reversals, credit transfers and room-not-ready; each stored in `approvals` and linked to the change. |
@@ -93,7 +93,7 @@ Migrations `0010`–`0012`; API in `apps/api/src/frontoffice`; reception screens
 | AT-05 | Done | Move 101 → 205; charges stay on the stay; the next guest in 101 inherits none. |
 | AT-08 | Done | Two receptionists race for the last suite, and six requests race for one room: exactly one succeeds. |
 | AT-09 | Done (front desk) | A charge posted during checkout is either settled or refused; no balance appears afterwards. Re-tested with POS room charges (POS PR). |
-| AT-18 | Partial | Kahama receptionist gets 403 on K1 routes and 404 for K1 ids on Kahama routes; guest stay history hides K1 stays; group accounts see all three. Consolidated reports not yet. |
+| AT-18 | Partial | Kahama receptionist gets 403 on K1 routes and 404 for K1 ids on Kahama routes; guest stay history hides K1 stays; group accounts see all three. Consolidated reports: see the reports PR below. |
 
 ### Decisions in this PR
 
@@ -210,9 +210,28 @@ Migration `0016`; API in `apps/api/src/loyalty`, with hooks in POS checkout, POS
 - **The OTP is shown on screen** until an SMS gateway is chosen.
 - **Cashback batches are approved against the head office** (one legal entity) by a second person.
 
+## Requirement IDs: reports and downloads PR
+
+Back office: **Daily flash**, **Hotel report**, **POS sales**, **Cash shifts** and **POS day close** each have *Download CSV (Excel)* and *PDF* buttons. API in `apps/api/src/reports`; screens in `apps/backoffice/src/reports` and `src/pos`. Guide: [how-to-use-reports.md](how-to-use-reports.md).
+
+| ID | Status | Notes |
+|---|---|---|
+| RPT-02 | Done | Hotel report by business date: available, occupied and complimentary rooms, occupancy, room revenue net of tax, ADR, RevPAR, arrivals, departures, cancellations and no-shows, with breakdowns by room type and booking source and lists of cancellations and no-shows (booked value, fee charged, reason). Definitions printed on the report (§7). |
+| RPT-03 | Done | POS sales by outlet, product, category, waiter and payment method; discounts, comps, voided checks and refunds listed. Shift totals in the cash-shift report. |
+| RPT-04 | Partial | Cashier variance (cash-shift report), tax summary (POS sales), in-house balances and POS-to-folio settlement difference (flash). Guest ledger, deposits and unpaid-bill reports not yet. |
+| RPT-06 | Partial | CSV (UTF-8 with BOM, opens in Excel; amounts as plain decimals; formula-safe) and PDF (A4, repeated table headers, page numbers) for every report above, behind the same permission and property scope as the screen. Each export is in the audit log (`report.export`). Filters: dates, property, outlet. Drill-down to transactions and staff/source filters not yet. |
+| RPT-07 | Partial | Daily flash per property and consolidated: occupancy, ADR, RevPAR, room, F&B and other revenue, money received by method, cashier variances and exceptions (open checks, outlet days not closed, voids, refunds, house accounts, unsettled POS sales, arrivals not checked in, overdue departures, in-house balances, failed SAP postings). On screen and downloadable; **sending by email or WhatsApp after the night audit is not built** (no gateway yet). |
+| RPT-08 | Partial | Group flash puts the properties side by side with a group total; ratios recomputed from the sums. F&B margin and bar variance wait for stock (INV-*). |
+| AT-16 | Partial | POS sales reconcile to settlements (difference shown); flash revenue uses the same queries as the hotel and POS reports. |
+| AT-18 | Done | Consolidated flash equals the sum of the property figures (tested); a Kahama manager cannot download K1 reports and sees only Kahama in the group view. |
+
+New permission `report.read` (owner, admin, area manager, group accounts, manager, accountant) for the hotel and flash reports; POS reports keep `pos.report`.
+
+Loyalty report downloads (LOY19, LOY21, LOY22, CLUB07) are not added yet.
+
 ## Not yet satisfied (everything else)
 
-HK-02 onwards, MT-*, POS-14, 15, 16, 20, BIL-05, 08, 13–15, INV-*, RPT-*, SEC-05, SEC-07, SEC-08, OPS-01, OPS-06, INT-01, INT-03–06, INT-08–10, SAP-01, SAP-03, SAP-06–10, SAP-12, SAP-16–19, AT-06, AT-11, AT-12, AT-15, AT-16 and SAP-AT01–03, 07–11, 13 are **not started**. SEC-03 admin MFA is still outstanding.
+HK-02 onwards, MT-*, POS-14, 15, 16, 20, BIL-05, 08, 13–15, INV-*, RPT-01, RPT-05, SEC-05, SEC-07, SEC-08, OPS-01, OPS-06, INT-01, INT-03–06, INT-08–10, SAP-01, SAP-03, SAP-06–10, SAP-12, SAP-16–19, AT-06, AT-11, AT-12, AT-15 and SAP-AT01–03, 07–11, 13 are **not started**. SEC-03 admin MFA is still outstanding.
 
 ## Client data received (26 Oct 2026)
 

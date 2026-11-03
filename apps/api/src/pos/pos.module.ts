@@ -16,5 +16,6 @@ import { PosShiftsService } from './shifts.service';
   imports: [FrontOfficeModule, IntegrationModule, LoyaltyModule],
   controllers: [PosController, PosStationsController, PosCashController, PosAdminController, PosMenuController],
   providers: [PosReportsService, PosDaysService, PosMenuService, PosChecksService, PosSettlementService, PosShiftsService, PosSettingsService],
+  exports: [PosReportsService, PosDaysService],
 })
 export class PosModule {}

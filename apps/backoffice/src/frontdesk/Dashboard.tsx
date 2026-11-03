@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { hasPermission } from '@hotel/shared';
+import { hasPermission, nightsBetween } from '@hotel/shared';
 import { api } from '../api';
 import { base, ErrorText, kes, label, Modal, StatusBadge, useAction, useLoad, useSession } from '../ui';
 import { CheckInModal, StayRef } from './StayActions';
@@ -122,6 +122,8 @@ export function DashboardPage() {
     ['Open requests', c.openRequests],
   ];
 
+  const overdue = nightsBetween(property.currentBusinessDate, property.expectedBusinessDate);
+
   return (
     <>
       <div className="ys-page-head">
@@ -134,6 +136,14 @@ export function DashboardPage() {
           <button className="ys-btn ghost" onClick={() => setClosing(true)}>Close day</button>
         )}
       </div>
+
+      {overdue.length > 0 && (
+        <p className="ys-warn">
+          <strong>Day close overdue.</strong> The business date is {property.currentBusinessDate} but by the clock it should be{' '}
+          {property.expectedBusinessDate} (the day changes at {property.businessDayCutoff}). Close {overdue.length === 1 ? 'the day' : `each of the ${overdue.length} days in turn`} to post the room nights
+          and catch up.{!hasPermission(me.roles, 'businessday.close') && ' Ask a manager to do this.'}
+        </p>
+      )}
 
       <div className="ys-tiles">
         {tiles.map(([name, n, tone]) => (

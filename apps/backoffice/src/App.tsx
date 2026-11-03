@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { hasPermission, Permission } from '@hotel/shared';
+import { hasPermission, nightsBetween, Permission } from '@hotel/shared';
 import { api, ApiError, Me, OutboxEvent, Outlet, Property } from './api';
 import { Session, SessionContext } from './ui';
 import { CalendarPage } from './frontdesk/Calendar';
@@ -11,12 +11,25 @@ import { NewReservationPage, ReservationDetailPage, ReservationsPage } from './f
 import { RatesPage, RoomsPage } from './frontdesk/Rooms';
 import { CashbackPage, LoyaltyMemberPage, LoyaltyMembersPage, LoyaltyProgrammePage, LoyaltyReportsPage } from './loyalty/Loyalty';
 import { PosDaysPage, PosMenuPage, PosSalesPage, PosSettingsPage, PosShiftsPage } from './pos/Pos';
+import { FlashReportPage, HotelReportPage } from './reports/Reports';
+
+/** Header business date; turns amber when the day close is overdue. */
+function BusinessDateBadge({ property }: { property: Property }) {
+  const behind = nightsBetween(property.currentBusinessDate, property.expectedBusinessDate).length;
+  if (!behind) return <span className="ys-user">Business date {property.currentBusinessDate}</span>;
+  return (
+    <span className="ys-user ys-overdue" title={`Today's business date is ${property.expectedBusinessDate}. Close the day on the Front desk page.`}>
+      Business date {property.currentBusinessDate} · {behind} day{behind > 1 ? 's' : ''} behind
+    </span>
+  );
+}
 
 type Page =
   | 'desk' | 'calendar' | 'reservations' | 'new-reservation' | 'reservation' | 'folio'
   | 'guests' | 'guest' | 'requests' | 'rooms' | 'rates'
   | 'pos-days' | 'pos-sales' | 'pos-shifts' | 'pos-menu' | 'pos-settings'
   | 'loyalty-members' | 'loyalty-member' | 'loyalty-programme' | 'loyalty-cashback' | 'loyalty-reports'
+  | 'report-flash' | 'report-hotel'
   | 'overview' | 'outlets' | 'integration';
 
 /** Main navigation; each entry shows only for users holding its permission (the API enforces the same, SEC-01). */
@@ -28,6 +41,8 @@ const NAV: Array<[Page, string, Permission?]> = [
   ['requests', 'Guest requests', 'guest_request.manage'],
   ['rooms', 'Rooms', 'room.read'],
   ['rates', 'Rates and policy', 'rate.read'],
+  ['report-flash', 'Daily flash', 'report.read'],
+  ['report-hotel', 'Hotel report', 'report.read'],
   ['pos-days', 'POS day close', 'pos.report'],
   ['pos-sales', 'POS sales', 'pos.report'],
   ['pos-shifts', 'Cash shifts', 'pos.report'],
@@ -239,7 +254,7 @@ export function App() {
             ))}
           </select>
         )}
-        {property && <span className="ys-user">Business date {property.currentBusinessDate}</span>}
+        {property && <BusinessDateBadge property={property} />}
         <span className="ys-user">{me.displayName}</span>
         <a className="ys-user ys-link" href="/pwa/">Tablet app (POS, kitchen)</a>
         <button className="ys-btn" onClick={() => { api.logout(); setMe(null); }}>Sign out</button>
@@ -269,6 +284,8 @@ export function App() {
               {page === 'requests' && <RequestsPage key={current} />}
               {page === 'rooms' && <RoomsPage key={current} />}
               {page === 'rates' && <RatesPage key={current} />}
+              {page === 'report-flash' && <FlashReportPage key={current} />}
+              {page === 'report-hotel' && <HotelReportPage key={current} />}
               {page === 'pos-days' && <PosDaysPage key={current} />}
               {page === 'pos-sales' && <PosSalesPage key={current} />}
               {page === 'pos-shifts' && <PosShiftsPage key={current} />}

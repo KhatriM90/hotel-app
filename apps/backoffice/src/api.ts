@@ -16,7 +16,10 @@ export interface Property {
   isHeadOffice: boolean;
   currency: string;
   timezone: string;
+  businessDayCutoff: string;
   currentBusinessDate: string;
+  /** What the business date should be by the clock; later than currentBusinessDate means a day close is overdue. */
+  expectedBusinessDate: string;
   sapBranchId: number | null;
 }
 
@@ -121,6 +124,13 @@ export class Api {
   /** Printable documents are served as HTML behind the same bearer token. */
   async html(path: string): Promise<string> {
     return (await this.raw(path)).text();
+  }
+
+  /** A report file (CSV or PDF, RPT-06) with the name the server gave it. */
+  async download(path: string): Promise<{ blob: Blob; filename: string }> {
+    const res = await this.raw(path);
+    const match = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '');
+    return { blob: await res.blob(), filename: match?.[1] ?? 'report' };
   }
 
   async login(username: string, password: string): Promise<Me> {

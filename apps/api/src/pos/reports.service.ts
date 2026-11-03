@@ -47,7 +47,56 @@ export class PosReportsService {
           GROUP BY o.code, o.name ORDER BY o.code`,
         [propertyId, input.from, input.to, outletId],
       );
-      return { from: input.from, to: input.to, outletCode: input.outletCode ?? null, ...totals, byOutlet };
+      // RPT-03: every product, not only the top ten.
+      const { rows: byItem } = await q.query(
+        `SELECT l.name, mc.name AS category, sum(l.quantity)::text AS quantity,
+                sum(l.discount_amount + l.rule_discount)::numeric(18,2)::text AS discounts, sum(l.amount)::numeric(18,2)::text AS amount
+           FROM pos_checks c JOIN pos_check_lines l ON l.check_id = c.id AND l.status NOT IN ('cancelled', 'wasted')
+           LEFT JOIN menu_items mi ON mi.id = l.item_id LEFT JOIN menu_categories mc ON mc.id = mi.category_id
+          WHERE c.property_id = $1 AND c.business_date BETWEEN $2 AND $3 AND ($4::uuid IS NULL OR c.outlet_id = $4)
+            AND c.status = 'closed' AND c.settlement <> 'house_account'
+          GROUP BY l.name, mc.name ORDER BY sum(l.amount) DESC, l.name`,
+        [propertyId, input.from, input.to, outletId],
+      );
+      const { rows: voids } = await q.query(
+        `SELECT c.number, c.business_date::text AS "businessDate", o.name AS outlet, u.display_name AS waiter, c.void_reason AS reason,
+                coalesce((SELECT sum(round((l.unit_price + l.modifiers_unit_price) * l.quantity, 2)) FROM pos_check_lines l
+                           WHERE l.check_id = c.id AND l.status NOT IN ('cancelled', 'wasted')), 0)::numeric(18,2)::text AS "listValue"
+           FROM pos_checks c JOIN outlets o ON o.id = c.outlet_id JOIN users u ON u.id = c.waiter_id
+          WHERE c.property_id = $1 AND c.business_date BETWEEN $2 AND $3 AND ($4::uuid IS NULL OR c.outlet_id = $4) AND c.status = 'void'
+          ORDER BY c.business_date, c.number`,
+        [propertyId, input.from, input.to, outletId],
+      );
+      const { rows: refundList } = await q.query(
+        `SELECT r.number, r.business_date::text AS "businessDate", c.number AS "checkNumber", o.name AS outlet, r.tender::text AS tender,
+                r.amount::text AS amount, r.reason, u.display_name AS "refundedBy"
+           FROM pos_refunds r JOIN pos_checks c ON c.id = r.check_id JOIN outlets o ON o.id = c.outlet_id LEFT JOIN users u ON u.id = r.created_by
+          WHERE r.property_id = $1 AND r.business_date BETWEEN $2 AND $3 AND ($4::uuid IS NULL OR c.outlet_id = $4)
+          ORDER BY r.business_date, r.number`,
+        [propertyId, input.from, input.to, outletId],
+      );
+      return { from: input.from, to: input.to, outletCode: input.outletCode ?? null, ...totals, byOutlet, byItem, voids, refundList };
+    });
+  }
+
+  /** Cash shifts whose trading day falls in the period (POS-13, RPT-04 cashier variance). */
+  async shifts(propertyId: string, input: { from: string; to: string; outletCode?: string }) {
+    return this.db.tx(async (q) => {
+      const outletId = input.outletCode ? (await outletByCode(q, propertyId, input.outletCode, false)).id : null;
+      const { rows } = await q.query<Record<string, string | null>>(
+        `SELECT s.number, d.business_date::text AS "businessDate", o.name AS outlet, u.display_name AS cashier, s.status,
+                s.opening_float::text AS "openingFloat", s.expected_amount::text AS "expectedAmount", s.counted_amount::text AS "countedAmount",
+                s.variance::text AS variance, to_char(s.opened_at AT TIME ZONE p.timezone, 'YYYY-MM-DD HH24:MI') AS "openedAt",
+                to_char(s.closed_at AT TIME ZONE p.timezone, 'YYYY-MM-DD HH24:MI') AS "closedAt",
+                ru.display_name AS "reviewedBy", s.review_note AS "reviewNote", s.count_note AS "countNote"
+           FROM cashier_shifts s JOIN outlets o ON o.id = s.outlet_id JOIN users u ON u.id = s.user_id
+           JOIN pos_outlet_days d ON d.id = s.outlet_day_id JOIN properties p ON p.id = s.property_id
+           LEFT JOIN users ru ON ru.id = s.reviewed_by
+          WHERE s.property_id = $1 AND d.business_date BETWEEN $2 AND $3 AND ($4::uuid IS NULL OR s.outlet_id = $4)
+          ORDER BY d.business_date, o.code, s.opened_at`,
+        [propertyId, input.from, input.to, outletId],
+      );
+      return rows;
     });
   }
 

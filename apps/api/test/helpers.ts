@@ -4,8 +4,8 @@ import request from 'supertest';
 import { createApp } from '../src/bootstrap';
 import { loadConfig } from '../src/config';
 
-export async function startApp(): Promise<INestApplication> {
-  const app = await createApp(loadConfig());
+export async function startApp(env: Record<string, string> = {}): Promise<INestApplication> {
+  const app = await createApp(loadConfig({ ...process.env, ...env }));
   await app.init();
   return app;
 }
