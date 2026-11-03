@@ -126,6 +126,13 @@ export class Api {
     return (await this.raw(path)).text();
   }
 
+  /** A report file (CSV or PDF, RPT-06) with the name the server gave it. */
+  async download(path: string): Promise<{ blob: Blob; filename: string }> {
+    const res = await this.raw(path);
+    const match = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '');
+    return { blob: await res.blob(), filename: match?.[1] ?? 'report' };
+  }
+
   async login(username: string, password: string): Promise<Me> {
     const res = await this.request<{ accessToken: string; user: Me }>('/auth/login', {
       method: 'POST',

@@ -2,7 +2,7 @@
 
 Hotel, restaurant and bar platform for a three-property group in Kenya: **K1 Klubhouse** (Parklands, HQ), **Small World Country Club** (Lukenya) and **Kahama Mombasa**, under one legal entity and one KRA PIN. The development brief v1.2 is the source of truth; requirement IDs below refer to it.
 
-This repository holds the **foundation** (monorepo, database schema and guards, API core, SAP integration worker with a Service Layer mock, back-office and PWA shells, Docker Compose stacks) and two business modules: **reservations, front desk and the basic guest folio** (RES-01 to RES-08, FD-01 to FD-08, BIL-01, BIL-06, BIL-09) and the **point of sale** for all 43 outlets (POS-01 to POS-13, POS-17 to POS-19, charge to room, house accounts, cash shifts, POS day close, offline order capture). To try them by hand, follow [docs/how-to-test-reservations.md](docs/how-to-test-reservations.md) and [docs/how-to-test-pos.md](docs/how-to-test-pos.md). See [docs/requirements-traceability.md](docs/requirements-traceability.md) for exactly which requirement IDs are done, partial or not started.
+This repository holds the **foundation** (monorepo, database schema and guards, API core, SAP integration worker with a Service Layer mock, back-office and PWA shells, Docker Compose stacks) and two business modules: **reservations, front desk and the basic guest folio** (RES-01 to RES-08, FD-01 to FD-08, BIL-01, BIL-06, BIL-09) and the **point of sale** for all 43 outlets (POS-01 to POS-13, POS-17 to POS-19, charge to room, house accounts, cash shifts, POS day close, offline order capture). To try them by hand, follow [docs/how-to-test-reservations.md](docs/how-to-test-reservations.md) and [docs/how-to-test-pos.md](docs/how-to-test-pos.md). **Reports** (daily flash, hotel report, POS sales, cash shifts, Z reports) download as CSV for Excel or PDF: see [docs/how-to-use-reports.md](docs/how-to-use-reports.md). See [docs/requirements-traceability.md](docs/requirements-traceability.md) for exactly which requirement IDs are done, partial or not started.
 
 ![Booking record](docs/screenshots/frontdesk-booking.png)
 
@@ -10,7 +10,7 @@ This repository holds the **foundation** (monorepo, database schema and guards, 
 
 | Path | What |
 |---|---|
-| `apps/api` | NestJS API (TypeScript, PostgreSQL, Redis/BullMQ). SQL migrations in `apps/api/migrations`. Reservations, front desk and folio in `src/frontoffice`; POS in `src/pos`. |
+| `apps/api` | NestJS API (TypeScript, PostgreSQL, Redis/BullMQ). SQL migrations in `apps/api/migrations`. Reservations, front desk and folio in `src/frontoffice`; POS in `src/pos`; reports and CSV/PDF exports in `src/reports`. |
 | `apps/backoffice` | React back office and reception screens (Vite). Front desk pages in `src/frontdesk`; POS day close, sales, cash shifts, menus and business-day settings in `src/pos`. |
 | `apps/pwa` | PWA for waiter and bar tablets (orders, bills, payments, charge to room, offline order queue) and the kitchen/bar ticket screen; housekeeping phones to come. |
 | `apps/sap-worker` | Integration worker that runs at K1 HQ beside SAP. Pulls from the cloud over outbound HTTPS and posts via Service Layer. |
@@ -72,7 +72,7 @@ The worker posts it to the mock; check **SAP postings** in the back office or `G
 npm test          # all workspaces
 ```
 
-API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 182 tests across the workspaces, 123 of them API tests against the database, covering the front desk acceptance tests (AT-01, AT-05, AT-08, AT-09, AT-18), the POS acceptance tests (AT-02, AT-03, AT-07, AT-09, AT-10, AT-13, AT-14, AT-18), charge to room, cash shifts, day close, offline replay, booking lifecycle, holds, amendments, deposits and fees, approvals, folio and payments, RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, the worker against the Service Layer mock (SAP-AT04/05/06, session expiry), and the demo seed on a database of its own.
+API tests run against a real PostgreSQL: the suite drops and recreates `hotel_api_test`, migrates and seeds it. Point it elsewhere with `TEST_DATABASE_ADMIN_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`). Current suite: 207 tests across the workspaces, 145 of them API tests against the database, covering the reports and CSV/PDF downloads (RPT-02, RPT-06, RPT-07, AT-18 consolidation), the front desk acceptance tests (AT-01, AT-05, AT-08, AT-09, AT-18), the POS acceptance tests (AT-02, AT-03, AT-07, AT-09, AT-10, AT-13, AT-14, AT-18), charge to room, cash shifts, day close, offline replay, booking lifecycle, holds, amendments, deposits and fees, approvals, folio and payments, RLS property isolation, gapless numbering under concurrency, append-only and finalised-record guards, money domains, idempotent replay including concurrent duplicates, permissions, the worker pull API, the worker against the Service Layer mock (SAP-AT04/05/06, session expiry), and the demo seed on a database of its own.
 
 ## Dev and test stacks on EC2 (t4g.large, af-south-1)
 

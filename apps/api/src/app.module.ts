@@ -13,6 +13,7 @@ import { IntegrationModule } from './integration/integration.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { NumberingModule } from './numbering/numbering.service';
 import { PosModule } from './pos/pos.module';
+import { ReportsModule } from './reports/reports.module';
 import { PropertiesModule } from './properties/properties.module';
 
 @Global()
@@ -44,6 +45,7 @@ export class AppModule implements NestModule {
         IntegrationModule,
         FrontOfficeModule,
         PosModule,
+        ReportsModule,
         ...queues,
       ],
       providers: [

@@ -164,6 +164,42 @@ export async function openPrintable(path: string): Promise<void> {
   }
 }
 
+/**
+ * "Download CSV / PDF" for a report (RPT-06). `path` is the report's /export
+ * route with its filters; the format is added here. CSV opens in Excel.
+ */
+export function DownloadButtons({ path, disabled }: { path: string; disabled?: boolean }) {
+  const [busy, setBusy] = useState<'csv' | 'pdf' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function download(format: 'csv' | 'pdf') {
+    setBusy(format);
+    setError(null);
+    try {
+      const { blob, filename } = await api.download(`${path}${path.includes('?') ? '&' : '?'}format=${format}`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Download failed');
+    } finally {
+      setBusy(null);
+    }
+  }
+  return (
+    <span className="ys-downloads" role="group" aria-label="Download">
+      <span className="ys-muted">Download</span>
+      <button type="button" className="ys-btn small ghost" disabled={disabled || busy !== null} onClick={() => download('csv')}>{busy === 'csv' ? '…' : 'CSV (Excel)'}</button>
+      <button type="button" className="ys-btn small ghost" disabled={disabled || busy !== null} onClick={() => download('pdf')}>{busy === 'pdf' ? '…' : 'PDF'}</button>
+      {error && <span className="ys-error" role="alert">{error}</span>}
+    </span>
+  );
+}
+
 export function today(property: Property): string {
   return property.currentBusinessDate;
 }

@@ -33,4 +33,17 @@ describe('Api client', () => {
     await expect(api.me()).rejects.toEqual(new ApiError(401, 'Invalid or expired token'));
     expect(api.token).toBeNull();
   });
+
+  it('downloads a report with the file name the server chose (RPT-06)', async () => {
+    const storage = memoryStorage();
+    storage.setItem('yeastay.token', 'tok');
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('\ufeffPOS sales\r\n', { status: 200, headers: { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename="K1-pos-sales-2026-11-02.csv"' } }),
+    );
+    const api = new Api('/api', storage, fetchMock);
+    const file = await api.download('/properties/K1/reports/pos-sales/export?from=2026-11-02&to=2026-11-02&format=csv');
+    expect(file.filename).toBe('K1-pos-sales-2026-11-02.csv');
+    expect(await file.blob.text()).toContain('POS sales');
+    expect((fetchMock.mock.calls[0][1].headers as Headers).get('authorization')).toBe('Bearer tok');
+  });
 });
