@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { hasPermission, IDENTITY_DOCUMENT_TYPES } from '@hotel/shared';
 import { api } from '../api';
+import { GuestLoyaltyPanel } from '../loyalty/Loyalty';
 import { ErrorText, Field, label, StatusBadge, useAction, useLoad, useSession } from '../ui';
 
 /** Guest profiles shared across the group (FD-02, CFG-05). Identity numbers stay masked unless the user may see them. */
@@ -115,6 +116,8 @@ export function GuestPage({ id }: { id: string }) {
           <p className="ys-muted">Marketing consent: {g.marketingConsentAt ? new Date(g.marketingConsentAt).toLocaleDateString() : 'not given'}</p>
         </div>
       )}
+
+      <GuestLoyaltyPanel guest={g} />
 
       <section className="ys-section">
         <h2>Identity documents</h2>

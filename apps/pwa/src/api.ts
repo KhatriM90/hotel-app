@@ -99,6 +99,10 @@ export class Api {
     return this.request<T>('POST', path, body, key);
   }
 
+  put<T>(path: string, body: unknown = {}): Promise<T> {
+    return this.request<T>('PUT', path, body);
+  }
+
   /** HTML for printing (receipts, tickets, Z reports), fetched with the session token. */
   async html(path: string): Promise<string> {
     return this.request<string>('GET', path);

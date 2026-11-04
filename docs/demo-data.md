@@ -25,6 +25,7 @@ It prints one line per scenario (✓ or ✗ with the reason) and a summary. A sc
 | `DEMO_PROPERTIES` | `K1,SW,KM` | Which properties to fill |
 | `DEMO_HISTORY` | `auto` | `auto`: if a property's business date is behind today, guests "arrive yesterday" and the demo closes the day up to today. `off`: everyone arrives today. `on`: close one day even if the date is already today (moves the business date forward) |
 | `DEMO_FORCE` | off | Add another set even if one exists for this date |
+| `DEMO_ONLY` | off | `loyalty`: add only the YeaStay Rewards demo members, for a stack that already has the rest |
 
 **Dates.** Guests who should look as if they arrived yesterday are booked and checked in on the property's current business date, and then the manager closes that day, which posts their room night as the night audit does. This only happens when the business date is behind today's date in Nairobi. If it is already today, those guests arrive today instead: they show as in-house but nobody is "due out today", and the summary says so.
 
@@ -99,6 +100,10 @@ Every user's password is the stack's `SEED_PASSWORD`. Back office is the site ro
 | POS day closed with a Z report | K1 Reception Shop, SW Swimming, KM Swimming Pool | `k1.manager` | **POS day close**: closed today, **Print Z report**; **Z reports** list |
 | Sales report | Every property, today | `k1.manager` or `owner` | **POS sales** for today: by category, tender, room charges, house accounts, discounts, voids, refunds |
 | SAP postings | Every paid check | `owner` | **SAP postings**: A/R invoice and incoming payment per paid check |
+
+## YeaStay Rewards members
+
+At each property: a regular member with 800 points, a club member with KES 5,000 wallet credit and 1,000 points, a corporate member linked to a company, and a staff member flagged and linked to that property's waiter (200 points). Reception enrols them, and a manager adds the opening balances as approved corrections, so their history shows where the balances came from. A member found by phone is left as it is, so running the demo again adds nothing. The full list, with phone numbers, is in [how-to-test-loyalty.md](how-to-test-loyalty.md).
 
 ## What the demo does not cover
 

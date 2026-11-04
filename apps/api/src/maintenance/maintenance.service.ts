@@ -2,19 +2,26 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '../db/db.service';
 import { SYSTEM_SCOPE } from '../db/request-context';
 import { OutboxService } from '../integration/outbox.service';
+import { LoyaltyCheckoutService } from '../loyalty/checkout.service';
+import { LoyaltyLedgerService } from '../loyalty/ledger.service';
 
 @Injectable()
 export class MaintenanceService {
   constructor(
     private readonly db: DbService,
     private readonly outbox: OutboxService,
+    private readonly loyaltyCheckout: LoyaltyCheckoutService,
+    private readonly loyaltyLedger: LoyaltyLedgerService,
   ) {}
 
-  async tick(): Promise<{ releasedClaims: number; purgedKeys: number; expiredHolds: number }> {
+  async tick(): Promise<{ releasedClaims: number; purgedKeys: number; expiredHolds: number; rewardHoldsReleased: number; lotsExpired: number }> {
     const releasedClaims = await this.outbox.releaseExpiredClaims();
     const purgedKeys = await this.purgeExpiredIdempotencyKeys();
     const expiredHolds = await this.releaseExpiredHolds();
-    return { releasedClaims, purgedKeys, expiredHolds };
+    // Loyalty: rewards held on bills that timed out go back (S24); points and credit past expiry expire (LOY13).
+    const rewardHoldsReleased = await this.loyaltyCheckout.releaseExpiredHolds();
+    const lotsExpired = await this.loyaltyLedger.expireAll();
+    return { releasedClaims, purgedKeys, expiredHolds, rewardHoldsReleased, lotsExpired };
   }
 
   /**

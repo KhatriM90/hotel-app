@@ -22,7 +22,7 @@ export class MappingError extends Error {
 }
 
 export interface MappedDocument {
-  entity: 'Invoices' | 'CreditNotes' | 'IncomingPayments';
+  entity: 'Invoices' | 'CreditNotes' | 'IncomingPayments' | 'JournalEntries';
   body: Record<string, unknown>;
 }
 
@@ -133,6 +133,49 @@ function mapPayment(job: ClaimedJob): MappedDocument {
   };
 }
 
+interface JournalPayload {
+  kind: string;
+  docDate: string;
+  memo: string;
+  lines: Array<{ account: string; debit: string; credit: string }>;
+}
+
+/**
+ * Loyalty journals (CLUB07): cashback expense against the wallet liability
+ * when month-end credit posts, and the reverse when credit is used. Accounts
+ * come from the finance mapping in programme settings; an unmapped account is
+ * a visible mapping exception, never a guess.
+ */
+function mapJournal(job: ClaimedJob): MappedDocument {
+  const p = job.payload as unknown as JournalPayload;
+  if (!p.docDate || !Array.isArray(p.lines) || p.lines.length < 2) throw new MappingError(`LOYALTY_JOURNAL ${job.externalRef} payload is incomplete`);
+  const unmapped = p.lines.find((l) => !l.account || l.account === 'UNMAPPED');
+  if (unmapped) throw new MappingError(`Loyalty ${p.kind} journal needs the cashback expense and wallet liability G/L accounts set in programme settings (CLUB07)`);
+  const lines = p.lines.map((l, i) => ({ debit: num(l.debit, `lines[${i}].debit`), credit: num(l.credit, `lines[${i}].credit`), account: l.account }));
+  const cents = (n: number) => Math.round(n * 100);
+  if (lines.reduce((a, l) => a + cents(l.debit) - cents(l.credit), 0) !== 0) throw new MappingError(`LOYALTY_JOURNAL ${job.externalRef} does not balance`);
+  const bpl = branch(job);
+  return {
+    entity: 'JournalEntries',
+    body: {
+      ReferenceDate: p.docDate,
+      DueDate: p.docDate,
+      TaxDate: p.docDate,
+      Memo: p.memo.slice(0, 50),
+      Reference: job.externalRef.slice(0, 27),
+      ...traceability(job),
+      JournalEntryLines: lines.map((l) => ({
+        AccountCode: l.account,
+        Debit: l.debit,
+        Credit: l.credit,
+        BPLID: bpl,
+        CostingCode: job.property.sapDimension1,
+        LineMemo: p.memo.slice(0, 50),
+      })),
+    },
+  };
+}
+
 export function mapJob(job: ClaimedJob): MappedDocument {
   switch (job.eventType) {
     case 'AR_INVOICE':
@@ -141,6 +184,8 @@ export function mapJob(job: ClaimedJob): MappedDocument {
       return mapInvoice(job, 'CreditNotes');
     case 'INCOMING_PAYMENT':
       return mapPayment(job);
+    case 'LOYALTY_JOURNAL':
+      return mapJournal(job);
     default:
       throw new MappingError(`No SAP mapping for event type ${job.eventType}`);
   }

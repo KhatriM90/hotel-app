@@ -20,6 +20,7 @@ export const DOCUMENT_ENTITIES = [
   'StockTransfers',
   'InventoryGenExits',
   'InventoryGenEntries',
+  'JournalEntries',
 ] as const;
 type Entity = (typeof DOCUMENT_ENTITIES)[number];
 
@@ -87,6 +88,17 @@ function validateDocument(entity: Entity, body: Record<string, unknown>, opts: M
     }
   }
   if (entity === 'IncomingPayments' && typeof body.CardCode !== 'string') return "Property 'CardCode' is required";
+  if (entity === 'JournalEntries') {
+    const lines = body.JournalEntryLines;
+    if (!Array.isArray(lines) || lines.length < 2) return 'Journal entry must contain at least two lines';
+    let balance = 0;
+    for (const [i, line] of lines.entries()) {
+      const l = line as Record<string, unknown>;
+      if (typeof l.AccountCode !== 'string' || !l.AccountCode) return `Line ${i}: AccountCode is required`;
+      balance += Math.round(Number(l.Debit ?? 0) * 100) - Math.round(Number(l.Credit ?? 0) * 100);
+    }
+    if (balance !== 0) return 'Journal entry is not balanced';
+  }
   return undefined;
 }
 

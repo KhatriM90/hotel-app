@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
+import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { ApprovalsService } from './approvals.service';
 import { FoliosService } from './folios.service';
 import { FrontDeskService } from './frontdesk.service';
@@ -10,6 +11,7 @@ import { RoomsService } from './rooms.service';
 
 /** Reservations, front desk and the basic folio (RES-01 … RES-08, FD-01 … FD-08, BIL-01, BIL-06, BIL-09). */
 @Module({
+  imports: [forwardRef(() => LoyaltyModule)],
   controllers: [RoomsController, ReservationsController, FrontDeskController, FoliosController, GuestsController],
   providers: [ApprovalsService, RoomsService, RatesService, GuestsService, FoliosService, ReservationsService, FrontDeskService],
   exports: [RoomsService, FoliosService, ApprovalsService],

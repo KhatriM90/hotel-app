@@ -84,6 +84,8 @@ const REGISTRATION_TERMS = [
 export const SEED_COMPANIES = [
   { kind: 'company' as const, name: 'Acme Logistics Ltd', contactName: 'Accounts Payable', contactEmail: 'ap@acme-logistics.example' },
   { kind: 'agent' as const, name: 'Savannah Tours & Travel', contactName: 'Reservations', contactEmail: 'bookings@savannah-tours.example' },
+  { kind: 'company' as const, name: 'Lukenya Engineering Ltd', contactName: 'Finance', contactEmail: 'finance@lukenya-eng.example' },
+  { kind: 'company' as const, name: 'Pwani Shipping Ltd', contactName: 'Accounts', contactEmail: 'accounts@pwani-shipping.example' },
 ];
 
 export const SEED_GUESTS = [

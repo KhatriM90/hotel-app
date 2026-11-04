@@ -241,3 +241,23 @@ canvas.sig { width: 100%; height: 160px; border: 1px dashed var(--ink-dim); bord
   .bottom-nav button { min-width: 0; flex: 1; }
   .bottom-nav .spacer { display: none; }
 }
+
+/* YeaStay Rewards strip on the bill */
+.loy { margin: 10px 14px 0; }
+.loy-add { width: 100%; min-height: 48px; border: 1px dashed var(--ys-teal); background: #f2f8f8; color: var(--ys-teal); border-radius: 12px; font-weight: 600; }
+.loy.on { border: 1px solid #cfe2e3; background: #f2f8f8; border-radius: 12px; padding: 10px 12px; color: var(--ink); display: grid; gap: 6px; }
+.loy-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.loy-head small { color: var(--ink-dim); }
+.loy-tier { background: var(--ys-amber); color: var(--ys-night); border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 700; }
+.loy-tier.staff { background: #e3e7f6; color: #2a3a7a; }
+.loy-bal, .loy-earn { font-size: 14px; color: var(--ink-dim); }
+.loy-used { font-size: 14px; color: var(--ok-dark); font-weight: 600; }
+.loy-warn { margin: 0; font-size: 13px; color: #8a5a00; }
+.loy-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.loy-switch button { min-height: 40px; border-radius: 10px; border: 1px solid #cfe2e3; background: #fff; color: var(--ink); }
+.loy-switch button.on { background: var(--ys-teal); color: #fff; border-color: var(--ys-teal); font-weight: 600; }
+.loy-redeem { min-height: 44px; border-radius: 10px; border: 0; background: var(--ys-amber); color: var(--ys-night); font-weight: 700; }
+.loy-redeem:disabled { opacity: .5; }
+.loy .link, .order .link { background: none; border: 0; color: var(--ys-teal); text-decoration: underline; padding: 0 4px; }
+video.scan { width: 100%; border-radius: 12px; background: #000; }
+.demo { display: block; margin-top: 6px; background: #fff4dc; color: #6b4a00; border-radius: 8px; padding: 6px 8px; }

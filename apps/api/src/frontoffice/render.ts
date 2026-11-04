@@ -152,7 +152,7 @@ ${taxTable(c.taxSummary)}
   <tr><td>Payments and transfers</td><td class="num">${money(c.totals.paymentsConfirmed)}</td></tr>
   <tr class="strong"><td>Balance</td><td class="num">KES ${money(c.totals.balance)}</td></tr>
 </tbody></table>
-${c.fiscal?.status === 'not_submitted' ? `<div class="note">Not yet a KRA eTIMS fiscal invoice: ${esc(c.fiscal.note)}.</div>` : ''}`, sub);
+${c.fiscal?.status === 'not_submitted' ? `<div class="note">Not yet a KRA TIMS fiscal invoice: ${esc(c.fiscal.note)}.</div>` : ''}`, sub);
 }
 
 export function renderStatement(folio: Json, property: Json): string {
