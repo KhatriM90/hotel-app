@@ -1,6 +1,6 @@
 /**
  * A report as plain tables, so the same content can be shown on screen, saved
- * as CSV for Excel, or laid out as a PDF (RPT-06). Every value is already a
+ * as an Excel workbook or CSV, or laid out as a PDF (RPT-06). Every value is already a
  * string or a number: amounts stay decimal strings ("1234.50") so nothing is
  * rounded through floating point on the way out (§9).
  */
@@ -45,7 +45,7 @@ export interface Report {
   landscape?: boolean;
 }
 
-export type ExportFormat = 'csv' | 'pdf';
+export type ExportFormat = 'xlsx' | 'csv' | 'pdf';
 
 /** A label/value table, for summaries. */
 export function keyValueSection(title: string, rows: Array<[string, Cell, ColumnKind?]>, note?: string): Section {

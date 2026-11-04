@@ -21,6 +21,7 @@
     "@nestjs/jwt": "11.0.2",
     "@nestjs/platform-express": "11.2.8",
     "bullmq": "5.81.5",
+    "exceljs": "4.4.0",
     "pdfkit": "0.17.2",
     "pg": "8.23.1",
     "reflect-metadata": "0.2.2",
