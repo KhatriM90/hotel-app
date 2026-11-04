@@ -70,7 +70,7 @@ export function toPdf(report: Report): Promise<Buffer> {
   doc.fillColor(MUTED).fontSize(7.5).text(pdfSafe(`Generated ${report.generatedAt}${report.generatedBy ? ` by ${report.generatedBy}` : ''}`), { width });
   doc.moveDown(0.6);
 
-  for (const section of report.sections) drawSection(doc, section, width, bottom);
+  for (const section of report.sections) drawSection(doc, section, width, bottom, report.sections.length > 1 || section.title !== report.title);
 
   if (report.notes?.length) {
     if (doc.y + 30 > bottom()) doc.addPage();
@@ -91,7 +91,7 @@ export function toPdf(report: Report): Promise<Buffer> {
   return done;
 }
 
-function drawSection(doc: PDFKit.PDFDocument, s: Section, width: number, bottom: () => number): void {
+function drawSection(doc: PDFKit.PDFDocument, s: Section, width: number, bottom: () => number, heading = true): void {
   doc.font('Helvetica').fontSize(FONT);
   const all = [...s.rows, ...(s.totals ? [s.totals] : [])];
   const text = (row: Record<string, Cell>, c: Column) => formatCell(row[c.key], kindOf(c, row));
@@ -169,8 +169,10 @@ function drawSection(doc: PDFKit.PDFDocument, s: Section, width: number, bottom:
   const first = s.rows[0] ? rowHeight(s.rows[0]) : 14;
   if (doc.y + 16 + headerHeight() + first > bottom()) doc.addPage();
   doc.x = MARGIN;
-  doc.fillColor(TEAL).font('Helvetica-Bold').fontSize(10).text(pdfSafe(s.title), MARGIN, doc.y, { width });
-  doc.moveDown(0.2);
+  if (heading) {
+    doc.fillColor(TEAL).font('Helvetica-Bold').fontSize(10).text(pdfSafe(s.title), MARGIN, doc.y, { width });
+    doc.moveDown(0.2);
+  }
   drawHeader();
   if (!s.rows.length) {
     doc.fillColor(MUTED).font('Helvetica-Oblique').fontSize(FONT).text('Nothing in this period.', MARGIN + PAD, doc.y + PAD, { width });

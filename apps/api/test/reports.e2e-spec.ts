@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import ExcelJS from 'exceljs';
 import { Client } from 'pg';
 import request from 'supertest';
 import { addDays } from '@hotel/shared';
@@ -203,6 +204,125 @@ describe('reports', () => {
       expect(text).toContain('All properties');
       expect(text).toContain('Measure,K1 Klubhouse');
       expect(text).toContain(',Group');
+    });
+  });
+  describe('report catalogue (RPT-04, RPT-06)', () => {
+    const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const sheetOf = async (body: Buffer) => {
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(body as unknown as ArrayBuffer);
+      return wb.worksheets[0];
+    };
+    /** Finds the header row of the first table: the row whose first cell is `label`. */
+    const headerRow = (ws: ExcelJS.Worksheet, label: string) => {
+      for (let r = 1; r <= ws.rowCount; r++) if (ws.getCell(r, 1).value === label) return r;
+      throw new Error(`no ${label} header`);
+    };
+
+    it('lists focused reports by area, only those the user may download', async () => {
+      const res = await get('k1.manager', '/properties/K1/reports/catalog').expect(200);
+      const names = res.body.map((e: { name: string }) => e.name);
+      expect(names).toEqual(expect.arrayContaining(['room-sales', 'daily-flash', 'pos-products', 'pos-discounts', 'cash-shifts', 'money-received', 'guest-ledger', 'deposits-held']));
+      expect(new Set(res.body.map((e: { area: string }) => e.area))).toEqual(new Set(['hotel', 'pos', 'money']));
+      expect(res.body[0].build).toBeUndefined();
+      await get('k1.waiter', '/properties/K1/reports/catalog').expect(403);
+    });
+
+    it('downloads every report as an Excel workbook with the property, title and period on top', async () => {
+      const list = await get('k1.manager', '/properties/K1/reports/catalog').expect(200);
+      for (const e of list.body as Array<{ name: string; title: string }>) {
+        const res = await download('k1.manager', `/properties/K1/reports/catalog/${e.name}/export?from=${yesterday}&to=${yesterday}`).expect(200);
+        expect(res.headers['content-type']).toBe(XLSX);
+        expect(res.headers['content-disposition']).toMatch(new RegExp(`^attachment; filename="K1-${e.name}-.+\\.xlsx"$`));
+        const ws = await sheetOf(res.body);
+        expect(ws.getCell('A1').value).toBe('K1 Klubhouse');
+        expect(String(ws.getCell('A2').value)).not.toBe('');
+      }
+    }, 60_000);
+
+    it('keeps numbers as numbers in Excel: occupancy is a percentage, revenue an amount', async () => {
+      const hotel = await get('k1.manager', `/properties/K1/reports/hotel?from=${yesterday}&to=${yesterday}`).expect(200);
+      const res = await download('k1.manager', `/properties/K1/reports/catalog/room-sales/export?from=${yesterday}&to=${yesterday}`).expect(200);
+      const ws = await sheetOf(res.body);
+      const h = headerRow(ws, 'Date');
+      const labels = (ws.getRow(h).values as unknown[]).slice(1);
+      const col = (label: string) => labels.indexOf(label) + 1;
+      const day = ws.getRow(h + 1);
+      expect(day.getCell(col('Occupancy')).value).toBeCloseTo(Number(hotel.body.days[0].occupancy) / 100, 6);
+      expect(day.getCell(col('Occupancy')).numFmt).toBe('0.0%');
+      expect(day.getCell(col('Room revenue (net)')).value).toBe(Number(hotel.body.days[0].roomRevenue));
+      expect(day.getCell(col('Room revenue (net)')).numFmt).toBe('#,##0.00');
+      expect(day.getCell(1).value).toBeInstanceOf(Date);
+      expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: h });
+    });
+
+    it('money received for a day matches the flash report', async () => {
+      const flash = await get('k1.manager', `/properties/K1/reports/flash?date=${yesterday}`).expect(200);
+      const res = await download('k1.manager', `/properties/K1/reports/catalog/money-received/export?from=${yesterday}&to=${yesterday}&format=csv`).expect(200);
+      const lines = (res.body as Buffer).toString().split('\r\n');
+      const total = lines.find((l) => l.startsWith('Total,'));
+      expect(total?.split(',').pop()).toBe(flash.body.cash.total);
+    });
+
+    it('guest ledger balances match the folios, and deposits held are unapplied deposits', async () => {
+      const db = new Client({ connectionString: ownerUrl });
+      await db.connect();
+      const { rows: [want] } = await db.query(
+        `SELECT coalesce(sum(b.balance), 0)::numeric(18,2)::text AS balance, count(*)::int AS n
+           FROM folios f JOIN folio_balances b ON b.folio_id = f.id JOIN properties p ON p.id = f.property_id
+          WHERE p.code = 'K1' AND (f.status = 'open' OR b.balance <> 0)
+            AND (b.charges_total <> 0 OR b.payments_confirmed <> 0 OR b.payments_pending <> 0)`,
+      );
+      const { rows: [dep] } = await db.query(
+        `SELECT coalesce(sum(amount), 0)::numeric(18,2)::text AS amount, count(*)::int AS n FROM folio_payments fp JOIN properties p ON p.id = fp.property_id
+          WHERE p.code = 'K1' AND status = 'confirmed' AND is_deposit AND deposit_applied_at IS NULL`,
+      );
+      await db.end();
+      const ledger = await download('k1.manager', '/properties/K1/reports/catalog/guest-ledger/export?format=csv').expect(200);
+      const text = (ledger.body as Buffer).toString();
+      expect(ledger.headers['content-disposition']).toMatch(/^attachment; filename="K1-guest-ledger-As-at-\d{4}-\d{2}-\d{2}\.csv"$/);
+      if (want.n > 0) expect(text.split('\r\n').find((l) => l.startsWith(`Folios: ${want.n},`))?.split(',').pop()).toBe(want.balance);
+      else expect(text).toContain('Guest ledger');
+      const deposits = await download('k1.manager', '/properties/K1/reports/catalog/deposits-held/export?format=csv').expect(200);
+      const dtext = (deposits.body as Buffer).toString();
+      if (dep.n > 0) expect(dtext.split('\r\n').find((l) => l.startsWith(`Deposits: ${dep.n},`))?.split(',').pop()).toBe(dep.amount);
+    });
+
+    it('lists every discounted and complimentary line, filtered by outlet, also as PDF', async () => {
+      const db = new Client({ connectionString: ownerUrl });
+      await db.connect();
+      const { rows: [want] } = await db.query(
+        `SELECT count(*)::int AS n FROM pos_check_lines l JOIN pos_checks c ON c.id = l.check_id JOIN properties p ON p.id = c.property_id
+          WHERE p.code = 'K1' AND c.status = 'closed' AND c.business_date = $1 AND l.status NOT IN ('cancelled', 'wasted')
+            AND (l.discount_amount > 0 OR l.rule_discount > 0 OR l.is_comp)`,
+        [yesterday],
+      );
+      await db.end();
+      const csv = await download('k1.manager', `/properties/K1/reports/catalog/pos-discounts/export?from=${yesterday}&to=${yesterday}&format=csv`).expect(200);
+      const text = (csv.body as Buffer).toString();
+      if (want.n > 0) expect(text).toContain(`Lines: ${want.n},`);
+      else expect(text).toContain('Discounts and complimentaries');
+      const pdf = await download('k1.manager', `/properties/K1/reports/catalog/pos-discounts/export?from=${yesterday}&to=${yesterday}&format=pdf`).expect(200);
+      expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+      await get('k1.manager', `/properties/K1/reports/catalog/pos-discounts/export?from=${yesterday}&to=${yesterday}&outlet=NOPE`).expect(400);
+    });
+
+    it('refuses unknown reports, missing dates and other properties', async () => {
+      await get('k1.manager', `/properties/K1/reports/catalog/nope/export?from=${yesterday}&to=${yesterday}`).expect(404);
+      await get('k1.manager', '/properties/K1/reports/catalog/room-sales/export').expect(400);
+      await get('k1.manager', `/properties/K1/reports/catalog/room-sales/export?from=${today}&to=${yesterday}`).expect(400);
+      await get('km.manager', `/properties/K1/reports/catalog/guest-ledger/export`).expect(403);
+      await get('k1.waiter', `/properties/K1/reports/catalog/pos-products/export?from=${yesterday}&to=${yesterday}`).expect(403);
+    });
+
+    it('shows the user their own recent downloads, newest first', async () => {
+      const res = await get('k1.manager', '/properties/K1/reports/recent').expect(200);
+      expect(res.body.length).toBeGreaterThan(3);
+      expect(res.body[0].report).toBe('pos-discounts');
+      expect(res.body[0].format).toBe('pdf');
+      expect(res.body[0].file).toMatch(/^K1-/);
+      const owner = await get('owner', '/properties/K1/reports/recent').expect(200);
+      expect(owner.body.every((r: { file: string }) => !r.file.startsWith('K1-pos-discounts'))).toBe(true);
     });
   });
 });

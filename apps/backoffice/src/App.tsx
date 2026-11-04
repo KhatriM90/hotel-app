@@ -11,6 +11,7 @@ import { NewReservationPage, ReservationDetailPage, ReservationsPage } from './f
 import { RatesPage, RoomsPage } from './frontdesk/Rooms';
 import { CashbackPage, LoyaltyMemberPage, LoyaltyMembersPage, LoyaltyProgrammePage, LoyaltyReportsPage } from './loyalty/Loyalty';
 import { PosDaysPage, PosMenuPage, PosSalesPage, PosSettingsPage, PosShiftsPage } from './pos/Pos';
+import { ReportsPage } from './reports/Catalog';
 import { FlashReportPage, HotelReportPage } from './reports/Reports';
 
 /** Header business date; turns amber when the day close is overdue. */
@@ -29,7 +30,7 @@ type Page =
   | 'guests' | 'guest' | 'requests' | 'rooms' | 'rates'
   | 'pos-days' | 'pos-sales' | 'pos-shifts' | 'pos-menu' | 'pos-settings'
   | 'loyalty-members' | 'loyalty-member' | 'loyalty-programme' | 'loyalty-cashback' | 'loyalty-reports'
-  | 'report-flash' | 'report-hotel'
+  | 'reports' | 'report-flash' | 'report-hotel'
   | 'overview' | 'outlets' | 'integration';
 
 /** Main navigation; each entry shows only for users holding its permission (the API enforces the same, SEC-01). */
@@ -41,8 +42,9 @@ const NAV: Array<[Page, string, Permission?]> = [
   ['requests', 'Guest requests', 'guest_request.manage'],
   ['rooms', 'Rooms', 'room.read'],
   ['rates', 'Rates and policy', 'rate.read'],
+  ['reports', 'Reports', 'report.read'],
   ['report-flash', 'Daily flash', 'report.read'],
-  ['report-hotel', 'Hotel report', 'report.read'],
+  ['report-hotel', 'Room sales', 'report.read'],
   ['pos-days', 'POS day close', 'pos.report'],
   ['pos-sales', 'POS sales', 'pos.report'],
   ['pos-shifts', 'Cash shifts', 'pos.report'],
@@ -284,6 +286,7 @@ export function App() {
               {page === 'requests' && <RequestsPage key={current} />}
               {page === 'rooms' && <RoomsPage key={current} />}
               {page === 'rates' && <RatesPage key={current} />}
+              {page === 'reports' && <ReportsPage key={current} />}
               {page === 'report-flash' && <FlashReportPage key={current} />}
               {page === 'report-hotel' && <HotelReportPage key={current} />}
               {page === 'pos-days' && <PosDaysPage key={current} />}

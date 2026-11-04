@@ -5,7 +5,7 @@ import { base, DownloadButtons, ErrorText, Field, kes, label, useLoad, useSessio
 
 /**
  * Hotel report (RPT-02) and daily flash report (RPT-07, RPT-08), on screen and
- * as CSV or PDF downloads (RPT-06). Figures come from the API, which applies
+ * as Excel or PDF downloads (RPT-06). Figures come from the API, which applies
  * the permission and property scope.
  */
 
@@ -94,7 +94,7 @@ function SegmentTable({ title, rows }: { title: string; rows: Array<Segment & { 
 }
 
 export function HotelReportPage() {
-  const { property } = useSession();
+  const { property, go } = useSession();
   const lastClosed = addDays(property.currentBusinessDate, -1);
   const [from, setFrom] = useState(addDays(lastClosed, -6));
   const [to, setTo] = useState(lastClosed);
@@ -108,13 +108,16 @@ export function HotelReportPage() {
   return (
     <>
       <div className="ys-page-head">
-        <h1>Hotel report · {property.name}</h1>
+        <h1>Room sales · {property.name}</h1>
         <span className="spacer" />
         <Field label="From"><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
         <Field label="To"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
         <DownloadButtons path={`${base(property.code)}/reports/hotel/export?${filter}`} disabled={!valid} />
       </div>
-      <p className="ys-muted">Room sales, occupancy, ADR, RevPAR, cancellations and no-shows by business date (RPT-02). Room nights count once the day is closed.</p>
+      <p className="ys-muted">
+        Room sales, occupancy, ADR, RevPAR, cancellations and no-shows by business date (RPT-02). Room nights count once the day is closed. The download holds every
+        table below; to get one table on its own, use <button type="button" className="ys-link" onClick={() => go('reports')}>Reports</button>.
+      </p>
       <ErrorText error={error} />
       {data && t && (
         <>
