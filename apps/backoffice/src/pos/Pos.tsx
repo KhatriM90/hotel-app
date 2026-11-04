@@ -772,7 +772,7 @@ interface SalesDetail extends Totals {
 }
 
 export function PosSalesPage() {
-  const { property } = useSession();
+  const { property, go } = useSession();
   const [from, setFrom] = useState(property.currentBusinessDate);
   const [to, setTo] = useState(property.currentBusinessDate);
   const [outlet, setOutlet] = useState('');
@@ -794,7 +794,10 @@ export function PosSalesPage() {
         </Field>
         <DownloadButtons path={`${base(property.code)}/reports/pos-sales/export?${filter}`} disabled={!from || !to || from > to} />
       </div>
-      <p className="ys-muted">By trading date. Revenue is counted once, from closed checks; room charges are a way of settling, and house accounts are not sales.</p>
+      <p className="ys-muted">
+        By trading date. Revenue is counted once, from closed checks; room charges are a way of settling, and house accounts are not sales. Single tables (by product,
+        discounts, voids, refunds) download on their own from <button type="button" className="ys-link" onClick={() => go('reports')}>Reports</button>.
+      </p>
       <ErrorText error={error} />
       {data && (
         <>

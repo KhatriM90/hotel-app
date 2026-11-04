@@ -87,6 +87,20 @@ table.ys-table { width: 100%; border-collapse: collapse; background: var(--ys-su
 .ys-page-head .ys-field { margin: 0; }
 .ys-downloads { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .ys-downloads .ys-error { margin: 0; }
+
+/* Reports catalogue (RPT-06) */
+.ys-area-blurb { margin: -6px 0 12px; }
+.ys-report-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+.ys-report-card { background: var(--ys-surface); border: 1px solid var(--ys-border); border-radius: var(--ys-radius); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; box-shadow: inset 0 3px 0 var(--ys-teal); }
+.ys-report-card.pack { box-shadow: inset 0 3px 0 var(--ys-amber); background: #fffcf6; }
+.ys-report-card h3 { margin: 0; font-size: 17px; color: var(--ys-teal); }
+.ys-report-card p { margin: 0; font-size: 14px; color: var(--ys-slate); flex: 1; }
+.ys-report-filters { display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.ys-range { display: flex; align-items: center; gap: 6px; color: var(--ys-slate); }
+.ys-range input, .ys-report-filters select { font: inherit; font-size: 14px; padding: 6px 8px; min-height: 38px; border: 1px solid var(--ys-border); border-radius: 8px; background: #fff; color: var(--ys-night); min-width: 0; flex: 1; }
+.ys-report-actions { display: flex; align-items: center; gap: 14px; }
+.ys-report-actions .ys-btn { flex: 1; }
+.ys-link:disabled { opacity: .55; cursor: progress; }
 .ys-section { margin-top: 22px; }
 .ys-card.ys-section { margin-top: 16px; }
 .ys-section h2 { font-size: 18px; }

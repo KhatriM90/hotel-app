@@ -1,7 +1,9 @@
-import { BadRequestException, Controller, Get, Param, ParseUUIDPipe, Query, Res } from '@nestjs/common';
+import { BadRequestException, Controller, ForbiddenException, Get, NotFoundException, Param, ParseUUIDPipe, Query, Res } from '@nestjs/common';
+import { hasPermission } from '@hotel/shared';
 import type { Response } from 'express';
 import { z } from 'zod';
-import { CurrentProperty, PropertyScoped, RequirePermission } from '../auth/decorators';
+import { CurrentProperty, CurrentUser, PropertyScoped, RequirePermission } from '../auth/decorators';
+import type { AuthUser } from '../db/request-context';
 import { ZodPipe } from '../common/zod.pipe';
 import { DbService } from '../db/db.service';
 import { CurrentPropertyT, IsoDate } from '../frontoffice/common';
@@ -9,7 +11,9 @@ import { PosDaysService } from '../pos/days.service';
 import { PosReportsService } from '../pos/reports.service';
 import { cashShiftsReport, flashReport, hotelReport, Meta, posDayReport, posSalesReport } from './builders';
 import { generatedAt, generatedBy, parseFormat, ReportExporter } from './export';
+import { CATALOG, catalogEntry } from './catalog';
 import { FlashReportService } from './flash.service';
+import { LedgerReportsService } from './ledger.service';
 import { HotelReportsService } from './hotel-reports.service';
 
 type Q<T extends z.ZodTypeAny> = z.infer<T>;
@@ -20,6 +24,11 @@ const Range = z
   .refine((r) => r.from <= r.to, { message: 'from must be on or before to', path: ['from'] })
   .refine((r) => (Date.parse(r.to) - Date.parse(r.from)) / 86_400_000 < MAX_DAYS, { message: `at most ${MAX_DAYS} days at a time`, path: ['to'] });
 const OneDay = z.object({ date: IsoDate, format: z.string().optional() });
+/** Catalogue downloads: dates are optional because "as at now" reports have none. */
+const CatalogQuery = z
+  .object({ from: IsoDate.optional(), to: IsoDate.optional(), outlet: z.string().regex(/^[A-Z0-9_-]{1,12}$/i).optional(), format: z.string().optional() })
+  .refine((r) => !r.from || !r.to || r.from <= r.to, { message: 'from must be on or before to', path: ['from'] })
+  .refine((r) => !r.from || !r.to || (Date.parse(r.to) - Date.parse(r.from)) / 86_400_000 < MAX_DAYS, { message: `at most ${MAX_DAYS} days at a time`, path: ['to'] });
 
 /**
  * Reports on screen and as downloads (RPT-02, RPT-03, RPT-04, RPT-06, RPT-07,
@@ -35,6 +44,7 @@ export class PropertyReportsController {
     private readonly days: PosDaysService,
     private readonly hotel: HotelReportsService,
     private readonly flash: FlashReportService,
+    private readonly ledger: LedgerReportsService,
     private readonly exporter: ReportExporter,
   ) {}
 
@@ -50,6 +60,69 @@ export class PropertyReportsController {
     );
     if (!rows[0]) throw new BadRequestException(`No outlet ${code} at this property`);
     return rows[0].name;
+  }
+
+  // Catalogue (RPT-06): focused reports, each downloaded on its own ----------
+
+  /** The reports this user may download here, grouped on screen by area. */
+  @Get('catalog')
+  @RequirePermission('report.read')
+  catalog(@CurrentUser() user: AuthUser) {
+    return CATALOG.filter((e) => hasPermission(user.roles, e.permission)).map(({ build: _build, ...e }) => e);
+  }
+
+  @Get('catalog/:name/export')
+  @RequirePermission('report.read')
+  async catalogExport(
+    @CurrentProperty() p: CurrentPropertyT,
+    @CurrentUser() user: AuthUser,
+    @Param('name') name: string,
+    @Query(new ZodPipe(CatalogQuery)) q: Q<typeof CatalogQuery>,
+    @Res() res: Response,
+  ) {
+    const entry = catalogEntry(name);
+    if (!entry) throw new NotFoundException(`No report ${name}`);
+    if (!hasPermission(user.roles, entry.permission)) throw new ForbiddenException(`Missing permission ${entry.permission}`);
+    const format = parseFormat(q.format ?? 'xlsx');
+    let from = q.from ?? q.to;
+    let to = q.to ?? q.from;
+    if (entry.dates === 'none') from = to = p.businessDate;
+    if (!from || !to) throw new BadRequestException('from and to are required');
+    if (entry.dates === 'day') from = to;
+    const outletCode = entry.outlet ? q.outlet?.toUpperCase() : undefined;
+    const built = await entry.build({
+      propertyId: p.id,
+      businessDate: p.businessDate,
+      from,
+      to,
+      outletCode,
+      outletName: await this.outletName(p.id, outletCode),
+      meta: await this.meta(p.id),
+      hotel: this.hotel,
+      pos: this.pos,
+      flash: this.flash,
+      ledger: this.ledger,
+    });
+    const report = { ...built, key: entry.name }; // file name and recent list follow the catalogue name
+    const filters = entry.dates === 'none' ? { asAt: p.businessDate } : entry.dates === 'day' ? { date: to } : { from, to };
+    await this.exporter.send(res, report, format, p.code, { ...filters, outlet: outletCode ?? null });
+  }
+
+  /** This user's last downloads at this property and of group reports, newest first. */
+  @Get('recent')
+  @RequirePermission('report.read')
+  async recent(@CurrentProperty() p: CurrentPropertyT, @CurrentUser() user: AuthUser) {
+    const { rows } = await this.db.tx((q) =>
+      q.query<{ at: string; report: string; format: string; file: string; filters: Record<string, unknown> }>(
+        `SELECT occurred_at AS at, new_values->>'report' AS report, new_values->>'format' AS format, new_values->>'file' AS file,
+                new_values - 'report' - 'format' - 'file' AS filters
+           FROM audit_events
+          WHERE action = 'report.export' AND actor_user_id = $1 AND (property_id = $2 OR property_id IS NULL)
+          ORDER BY occurred_at DESC LIMIT 12`,
+        [user.id, p.id],
+      ),
+    );
+    return rows;
   }
 
   // POS (RPT-03) ------------------------------------------------------------
