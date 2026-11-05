@@ -1,5 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { hasPermission } from '@hotel/shared';
+import {
+  DEFAULT_GUEST_FIELD_RULES,
+  GUEST_FIELD_LABELS,
+  GuestFieldRequirement,
+  GuestFieldRules,
+  GuestRuleField,
+  hasPermission,
+  isCountryCode,
+  missingGuestFields,
+} from '@hotel/shared';
+import { conflict, isPgError, withSavepoint } from './common';
 import { AuditService } from '../audit/audit.service';
 import { DbService, Queryable } from '../db/db.service';
 import { requestContext } from '../db/request-context';
@@ -10,12 +20,25 @@ export interface GuestInput {
   email?: string | null;
   phone?: string | null;
   nationality?: string | null;
+  kraPin?: string | null;
   dateOfBirth?: string | null;
   address?: string | null;
   companyId?: string | null;
   preferences?: string | null;
   notes?: string | null;
   marketingConsent?: boolean;
+}
+
+export interface CompanyInput {
+  kind: 'company' | 'agent';
+  name: string;
+  kraPin?: string | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  creditDays?: number | null;
+  notes?: string | null;
+  isActive?: boolean;
 }
 
 export interface IdentityInput {
@@ -26,9 +49,16 @@ export interface IdentityInput {
 }
 
 const GUEST_COLUMNS = `
-  g.id, g.first_name AS "firstName", g.last_name AS "lastName", g.email, g.phone, g.nationality,
+  g.id, g.first_name AS "firstName", g.last_name AS "lastName", g.email, g.phone, g.nationality, g.kra_pin AS "kraPin",
   g.date_of_birth AS "dateOfBirth", g.address, g.company_id AS "companyId", c.name AS "companyName",
   g.preferences, g.notes, g.marketing_consent_at AS "marketingConsentAt", g.created_at AS "createdAt"`;
+
+const COMPANY_COLUMNS = `id, kind, name, kra_pin AS "kraPin", contact_name AS "contactName", contact_phone AS "contactPhone",
+  contact_email AS "contactEmail", credit_days AS "creditDays", notes, is_active AS "isActive"`;
+
+async function withSavepointOnce<T>(q: Queryable, fn: () => Promise<T>): Promise<T> {
+  return withSavepoint(q, 'company_update', fn);
+}
 
 /** Masks all but the last 3 characters: enough to confirm at the desk, not to copy (FD-02, SEC-05). */
 export function maskDocumentNumber(n: string): string {
@@ -61,15 +91,62 @@ export class GuestsService {
     return rows;
   }
 
-  async create(q: Queryable, input: GuestInput): Promise<{ id: string }> {
+  // -------------------------------------------------------------------------
+  // Mandatory guest fields (client request, 5 Nov 2026)
+  // -------------------------------------------------------------------------
+
+  async fieldRules(q: Queryable = this.db): Promise<GuestFieldRules> {
+    const { rows } = await q.query<{ field: GuestRuleField; requirement: GuestFieldRequirement }>('SELECT field, requirement FROM guest_field_rules');
+    const rules = { ...DEFAULT_GUEST_FIELD_RULES };
+    for (const r of rows) rules[r.field] = r.requirement;
+    return rules;
+  }
+
+  async updateFieldRules(input: Partial<GuestFieldRules>): Promise<GuestFieldRules> {
+    return this.db.tx(async (q) => {
+      const before = await this.fieldRules(q);
+      for (const [field, requirement] of Object.entries(input)) {
+        if (!requirement) continue;
+        await q.query('UPDATE guest_field_rules SET requirement = $2, updated_by = $3 WHERE field = $1', [field, requirement, requestContext.get()?.user?.id ?? null]);
+      }
+      const after = await this.fieldRules(q);
+      await this.audit.record({ action: 'guest.field_rules', entityType: 'guest_field_rules', previousValues: before, newValues: after });
+      return after;
+    });
+  }
+
+  /** Refuses a guest profile that lacks a field the hotel has made mandatory. */
+  async assertRequiredFields(q: Queryable, guest: Partial<GuestInput>): Promise<void> {
+    const missing = missingGuestFields(
+      { phone: guest.phone, email: guest.email, nationality: guest.nationality, kraPin: guest.kraPin, dateOfBirth: guest.dateOfBirth, address: guest.address },
+      await this.fieldRules(q),
+    );
+    if (missing.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'missing_guest_fields',
+        message: `Please fill in: ${missing.map((f) => GUEST_FIELD_LABELS[f]).join(', ')}`,
+        fields: missing,
+      });
+    }
+    if (guest.nationality && !isCountryCode(guest.nationality)) throw new BadRequestException(`Unknown country code ${guest.nationality}`);
+  }
+
+  /**
+   * Creates a profile. The mandatory-field rules apply to bookers and the
+   * primary guest of each room; extra occupants added at check-in (a spouse,
+   * children) only need a name, so callers pass `enforceRules: false` for them.
+   */
+  async create(q: Queryable, input: GuestInput, opts: { enforceRules?: boolean } = {}): Promise<{ id: string }> {
+    if (opts.enforceRules !== false) await this.assertRequiredFields(q, input);
     const { rows } = await q.query<{ id: string }>(
-      `INSERT INTO guests (first_name, last_name, email, phone, nationality, date_of_birth, address, company_id,
+      `INSERT INTO guests (first_name, last_name, email, phone, nationality, kra_pin, date_of_birth, address, company_id,
                            preferences, notes, marketing_consent_at, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CASE WHEN $11 THEN now() END, $12) RETURNING id`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CASE WHEN $12 THEN now() END, $13) RETURNING id`,
       [
         input.firstName.trim(), input.lastName.trim(), input.email ?? null, input.phone ?? null,
-        input.nationality?.toUpperCase() ?? null, input.dateOfBirth ?? null, input.address ?? null, input.companyId ?? null,
-        input.preferences ?? null, input.notes ?? null, input.marketingConsent === true, requestContext.get()?.user?.id ?? null,
+        input.nationality?.toUpperCase() ?? null, input.kraPin?.trim().toUpperCase() || null, input.dateOfBirth ?? null, input.address ?? null,
+        input.companyId ?? null, input.preferences ?? null, input.notes ?? null, input.marketingConsent === true, requestContext.get()?.user?.id ?? null,
       ],
     );
     await this.audit.record({ action: 'guest.create', entityType: 'guest', entityId: rows[0].id, newValues: { firstName: input.firstName, lastName: input.lastName } });
@@ -82,12 +159,17 @@ export class GuestsService {
 
   async update(id: string, input: Partial<GuestInput>) {
     const map: Record<string, string> = {
-      firstName: 'first_name', lastName: 'last_name', email: 'email', phone: 'phone', nationality: 'nationality',
+      firstName: 'first_name', lastName: 'last_name', email: 'email', phone: 'phone', nationality: 'nationality', kraPin: 'kra_pin',
       dateOfBirth: 'date_of_birth', address: 'address', companyId: 'company_id', preferences: 'preferences', notes: 'notes',
     };
+    if (input.kraPin) input = { ...input, kraPin: input.kraPin.trim().toUpperCase() };
+    if (input.nationality) input = { ...input, nationality: input.nationality.toUpperCase() };
     const entries = Object.entries(input).filter(([k, v]) => v !== undefined && map[k]);
     return this.db.tx(async (q) => {
       const before = await this.get(id);
+      // The rules apply to the profile as it will be after the change.
+      const merged = { ...(before as unknown as GuestInput), ...input };
+      await this.assertRequiredFields(q, merged);
       const sets = entries.map(([k], i) => `${map[k]} = $${i + 2}`);
       if (input.marketingConsent !== undefined) {
         sets.push(`marketing_consent_at = ${input.marketingConsent ? 'coalesce(marketing_consent_at, now())' : 'NULL'}`);
@@ -192,12 +274,63 @@ export class GuestsService {
     return (rowCount ?? 0) > 0;
   }
 
-  async companies(kind?: 'company' | 'agent') {
+  async companies(kind?: 'company' | 'agent', includeInactive = false) {
     const { rows } = await this.db.query(
-      `SELECT id, kind, name, kra_pin AS "kraPin", contact_name AS "contactName", contact_email AS "contactEmail"
-         FROM companies WHERE is_active AND ($1::text IS NULL OR kind = $1) ORDER BY name`,
-      [kind ?? null],
+      `SELECT ${COMPANY_COLUMNS} FROM companies
+        WHERE ($2 OR is_active) AND ($1::text IS NULL OR kind = $1) ORDER BY name`,
+      [kind ?? null, includeInactive],
     );
     return rows;
+  }
+
+  private async company(q: Queryable, id: string): Promise<Record<string, unknown>> {
+    const { rows } = await q.query(`SELECT ${COMPANY_COLUMNS} FROM companies WHERE id = $1`, [id]);
+    if (!rows[0]) throw new NotFoundException('Company or agent not found');
+    return rows[0];
+  }
+
+  /** Adds a travel agent or company (shared across the group, CFG-05). Names are unique per kind. */
+  async createCompany(input: CompanyInput) {
+    return this.db.tx(async (q) => {
+      try {
+        const { rows } = await q.query<{ id: string }>(
+          `INSERT INTO companies (kind, name, kra_pin, contact_name, contact_phone, contact_email, credit_days, notes, is_active, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9, true), $10) RETURNING id`,
+          [
+            input.kind, input.name.trim(), input.kraPin?.trim().toUpperCase() || null, input.contactName ?? null, input.contactPhone ?? null,
+            input.contactEmail ?? null, input.creditDays ?? null, input.notes ?? null, input.isActive ?? null, requestContext.get()?.user?.id ?? null,
+          ],
+        );
+        await this.audit.record({ action: 'company.create', entityType: 'company', entityId: rows[0].id, newValues: input });
+        return this.company(q, rows[0].id);
+      } catch (err) {
+        if (isPgError(err, '23505')) throw conflict(`There is already ${input.kind === 'agent' ? 'an agent' : 'a company'} called ${input.name}`, 'duplicate_name');
+        throw err;
+      }
+    });
+  }
+
+  async updateCompany(id: string, input: Partial<Omit<CompanyInput, 'kind'>>) {
+    const map: Record<string, string> = {
+      name: 'name', kraPin: 'kra_pin', contactName: 'contact_name', contactPhone: 'contact_phone', contactEmail: 'contact_email',
+      creditDays: 'credit_days', notes: 'notes', isActive: 'is_active',
+    };
+    if (input.kraPin) input = { ...input, kraPin: input.kraPin.trim().toUpperCase() };
+    const entries = Object.entries(input).filter(([k, v]) => v !== undefined && map[k]);
+    if (!entries.length) throw new BadRequestException('Nothing to update');
+    return this.db.tx(async (q) => {
+      const before = await this.company(q, id);
+      try {
+        await withSavepointOnce(q, () =>
+          q.query(`UPDATE companies SET ${entries.map(([k], i) => `${map[k]} = $${i + 2}`).join(', ')} WHERE id = $1`, [id, ...entries.map(([, v]) => v)]),
+        );
+      } catch (err) {
+        if (isPgError(err, '23505')) throw conflict(`That name is already in use`, 'duplicate_name');
+        throw err;
+      }
+      const after = await this.company(q, id);
+      await this.audit.record({ action: 'company.update', entityType: 'company', entityId: id, previousValues: before, newValues: after });
+      return after;
+    });
   }
 }

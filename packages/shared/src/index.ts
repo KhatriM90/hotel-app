@@ -4,3 +4,6 @@ export * from './documents';
 export * from './roles';
 export * from './frontdesk';
 export * from './pos';
+export * from './countries';
+export * from './guestfields';
+export * from './roomdashboard';

@@ -104,6 +104,7 @@ export async function guestId(user: UserApi, g: DemoGuest): Promise<string> {
     phone: g.phone,
     email: g.email,
     nationality: g.nationality,
+    kraPin: g.kraPin,
     preferences: g.preferences,
     notes: `${DEMO_NOTE}: invented guest for demonstrations`,
   });

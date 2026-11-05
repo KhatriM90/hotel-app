@@ -84,10 +84,14 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
   );
 }
 
-export function Field({ label: text, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+/** A labelled input. `required` marks it with a red star (client request, 5 Nov 2026). */
+export function Field({ label: text, children, hint, required }: { label: string; children: ReactNode; hint?: string; required?: boolean }) {
   return (
     <label className="ys-field">
-      <span>{text}</span>
+      <span>
+        {text}
+        {required && <span className="ys-req" aria-label="required"> *</span>}
+      </span>
       {children}
       {hint && <small className="ys-muted">{hint}</small>}
     </label>

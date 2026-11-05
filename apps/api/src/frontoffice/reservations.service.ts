@@ -340,6 +340,7 @@ export class ReservationsService {
               s.checked_in_at AS "checkedInAt", s.checked_out_at AS "checkedOutAt", s.cancelled_at AS "cancelledAt",
               s.cancel_reason AS "cancelReason", s.room_charge_allowed AS "roomChargeAllowed", s.credit_limit AS "creditLimit",
               s.departure_time AS "departureTime", s.registration_acknowledged_at AS "registrationAcknowledgedAt",
+              s.auto_post_room_charges AS "autoPostRoomCharges",
               f.id AS "folioId", f.number AS "folioNumber", f.status AS "folioStatus"
          FROM stays s
          JOIN room_types t ON t.id = s.room_type_id JOIN rate_plans rp ON rp.id = s.rate_plan_id

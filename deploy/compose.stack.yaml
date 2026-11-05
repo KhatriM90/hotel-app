@@ -94,6 +94,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       WORKER_TOKEN: ${WORKER_TOKEN:?set WORKER_TOKEN}
       ENABLE_DEV_ENDPOINTS: ${ENABLE_DEV_ENDPOINTS:-false}
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }

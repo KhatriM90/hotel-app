@@ -3,6 +3,38 @@ import { hasPermission, nightsBetween } from '@hotel/shared';
 import { api } from '../api';
 import { base, ErrorText, kes, label, Modal, StatusBadge, useAction, useLoad, useSession } from '../ui';
 import { CheckInModal, StayRef } from './StayActions';
+import { CreditRow, creditMessage } from './StayCredit';
+
+/** Prepaid guests whose credit ends tonight or has run out (client request, 5 Nov 2026). */
+function CreditWarnings() {
+  const { property, me, go } = useSession();
+  const canRead = hasPermission(me.roles, 'folio.read');
+  const { data } = useLoad(() => (canRead ? api.get<CreditRow[]>(`${base(property.code)}/front-desk/credit`) : Promise.resolve([] as CreditRow[])), [property.code]);
+  const warn = (data ?? []).filter((c) => c.status === 'runs_out_tomorrow' || c.status === 'exhausted');
+  if (!warn.length) return null;
+  return (
+    <section className="ys-section ys-card ys-credit-warn">
+      <h2>Prepaid credit running out</h2>
+      <table className="ys-table compact">
+        <thead><tr><th>Room</th><th>Guest</th><th>Stay</th><th>Credit</th><th /></tr></thead>
+        <tbody>
+          {warn.map((c) => {
+            const m = creditMessage(c);
+            return (
+              <tr key={c.stayId}>
+                <td>{c.roomNumber ?? '—'}</td>
+                <td>{c.guestName}</td>
+                <td><button className="ys-link" onClick={() => go('reservation', { id: c.reservationId })}>{c.stayNumber}</button></td>
+                <td className={`ys-tone-${m.tone}`}>{m.text}</td>
+                <td><button className="ys-btn small" onClick={() => go('folio', { id: c.folioId })}>Take payment</button></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
 
 /** Front desk dashboard (FD-01): today's movement, readiness and balances for one property. */
 
@@ -168,6 +200,8 @@ export function DashboardPage() {
           Room not ready for {data.arrivalsRoomNotReady.map((s) => `${s.guestName} (room ${s.roomNumber})`).join(', ')}.
         </p>
       )}
+
+      <CreditWarnings />
 
       <section className="ys-section">
         <h2>Arrivals</h2>

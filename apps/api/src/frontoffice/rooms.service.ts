@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { addDays, HkStatus, READY_HK_STATUSES } from '@hotel/shared';
+import { addDays, dashboardDates, HkStatus, READY_HK_STATUSES } from '@hotel/shared';
 import { AuditService } from '../audit/audit.service';
 import { DbService, Queryable } from '../db/db.service';
 import { requestContext } from '../db/request-context';
@@ -336,6 +336,50 @@ export class RoomsService {
       }));
 
       return { from, to, dates, rooms: grid, roomTypes: types, movement };
+    });
+  }
+
+  /**
+   * Room status dashboard (client request, 5 Nov 2026): every sellable room
+   * with its housekeeping condition, and every stay or block holding a room on
+   * any night of the inclusive range [from, to]. Nights are checkout-exclusive.
+   * The back office classifies and counts room-nights with the shared rules.
+   */
+  async dashboard(propertyId: string, from: string, to: string) {
+    let dates: string[];
+    try {
+      dates = dashboardDates(from, to);
+    } catch (err) {
+      throw new BadRequestException((err as Error).message);
+    }
+    return this.db.tx(async (q) => {
+      await this.releaseExpiredHolds(q, propertyId);
+      const { rows: rooms } = await q.query(
+        `SELECT ${ROOM_COLUMNS}, r.hk_updated_at AS "hkUpdatedAt"
+           FROM rooms r JOIN room_types t ON t.id = r.room_type_id
+          WHERE r.property_id = $1 AND r.is_sellable ORDER BY t.sort_order, r.number`,
+        [propertyId],
+      );
+      const { rows: segments } = await q.query(
+        // Checked-out stays stay on the chart as history, up to the day they actually left.
+        `SELECT a.id AS "allocationId", a.room_id AS "roomId", a.kind, lower(a.during)::text AS "from",
+                (CASE WHEN a.released_at IS NULL THEN upper(a.during) ELSE least(upper(a.during), s.departure_date) END)::text AS "to",
+                a.block_reason AS "blockReason",
+                s.id AS "stayId", s.number AS "stayNumber", s.status::text AS status, s.reservation_id AS "reservationId",
+                res.number AS "reservationNumber", g.first_name || ' ' || g.last_name AS "guestName",
+                s.arrival_date AS arrival, s.departure_date AS departure, s.adults, s.children,
+                s.auto_post_room_charges AS "autoPostRoomCharges", ag.name AS "agentName"
+           FROM room_allocations a
+           LEFT JOIN stays s ON s.id = a.stay_id
+           LEFT JOIN reservations res ON res.id = s.reservation_id
+           LEFT JOIN companies ag ON ag.id = res.agent_id
+           LEFT JOIN guests g ON g.id = s.primary_guest_id
+          WHERE a.property_id = $1 AND a.during && daterange($2::date, $3::date)
+            AND (a.released_at IS NULL OR (a.release_reason = 'checked_out' AND lower(a.during) < s.departure_date))
+          ORDER BY lower(a.during)`,
+        [propertyId, from, addDays(to, 1)],
+      );
+      return { from, to, days: dates.length, rooms, segments };
     });
   }
 }

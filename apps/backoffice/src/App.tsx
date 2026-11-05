@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { hasPermission, nightsBetween, Permission } from '@hotel/shared';
 import { api, ApiError, Me, OutboxEvent, Outlet, Property } from './api';
 import { Session, SessionContext } from './ui';
+import { AgentsPage } from './frontdesk/Agents';
 import { CalendarPage } from './frontdesk/Calendar';
 import { DashboardPage } from './frontdesk/Dashboard';
 import { FolioPage } from './frontdesk/Folio';
 import { GuestPage, GuestsPage } from './frontdesk/Guests';
 import { RequestsPage } from './frontdesk/Requests';
 import { NewReservationPage, ReservationDetailPage, ReservationsPage } from './frontdesk/Reservations';
+import { RoomDashboardPage } from './frontdesk/RoomDashboard';
 import { RatesPage, RoomsPage } from './frontdesk/Rooms';
 import { PosDaysPage, PosMenuPage, PosSalesPage, PosSettingsPage, PosShiftsPage } from './pos/Pos';
 import { ReportsPage } from './reports/Catalog';
@@ -25,8 +27,8 @@ function BusinessDateBadge({ property }: { property: Property }) {
 }
 
 type Page =
-  | 'desk' | 'calendar' | 'reservations' | 'new-reservation' | 'reservation' | 'folio'
-  | 'guests' | 'guest' | 'requests' | 'rooms' | 'rates'
+  | 'desk' | 'room-dashboard' | 'calendar' | 'reservations' | 'new-reservation' | 'reservation' | 'folio'
+  | 'guests' | 'guest' | 'agents' | 'requests' | 'rooms' | 'rates'
   | 'pos-days' | 'pos-sales' | 'pos-shifts' | 'pos-menu' | 'pos-settings'
   | 'reports' | 'report-flash' | 'report-hotel'
   | 'overview' | 'outlets' | 'integration';
@@ -34,9 +36,11 @@ type Page =
 /** Main navigation; each entry shows only for users holding its permission (the API enforces the same, SEC-01). */
 const NAV: Array<[Page, string, Permission?]> = [
   ['desk', 'Front desk', 'frontdesk.operate'],
+  ['room-dashboard', 'Room dashboard', 'room.read'],
   ['calendar', 'Availability', 'reservation.read'],
   ['reservations', 'Reservations', 'reservation.read'],
   ['guests', 'Guests', 'guest.read'],
+  ['agents', 'Agents and companies', 'guest.read'],
   ['requests', 'Guest requests', 'guest_request.manage'],
   ['rooms', 'Rooms', 'room.read'],
   ['rates', 'Rates and policy', 'rate.read'],
@@ -270,6 +274,7 @@ export function App() {
           {session && (
             <SessionContext.Provider value={session}>
               {page === 'desk' && <DashboardPage key={current} />}
+              {page === 'room-dashboard' && <RoomDashboardPage key={current} />}
               {page === 'calendar' && <CalendarPage key={current} />}
               {page === 'reservations' && <ReservationsPage key={current + (params.q ?? '')} params={params} />}
               {page === 'new-reservation' && <NewReservationPage key={current + JSON.stringify(params)} params={params} />}
@@ -277,6 +282,7 @@ export function App() {
               {page === 'folio' && params.id && <FolioPage key={params.id} id={params.id} />}
               {page === 'guests' && <GuestsPage />}
               {page === 'guest' && params.id && <GuestPage key={params.id} id={params.id} />}
+              {page === 'agents' && <AgentsPage />}
               {page === 'requests' && <RequestsPage key={current} />}
               {page === 'rooms' && <RoomsPage key={current} />}
               {page === 'rates' && <RatesPage key={current} />}

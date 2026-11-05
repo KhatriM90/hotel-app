@@ -205,3 +205,27 @@ KRA PIN `P000598390N`; SAP branches K1 Parklands = 1, Small World = 4, Kahama = 
 - **PSH warehouses with no K1 outlet:** Pitcher & Butch Bar (3), Shisha Bar (12) and Staff Kitchen (7). Manish is confirming with the customer.
 - The legal entity name.
 - Pitcher & Butch is set up as a restaurant that sells alcohol, and SWCC Complimentary as a non-revenue outlet. Both are guesses to confirm.
+
+## Front desk changes after the client demo (5 Nov 2026)
+
+The client's change list and the Roomscape room dashboard prototype. How to try each one: [how-to-test-front-desk-changes.md](how-to-test-front-desk-changes.md).
+
+| Ask | Status | Where |
+|---|---|---|
+| Room dashboard (prototype) | Done | **Room dashboard** page: calendar, table and room cards; day, week, month, custom (max 366 days); search and filters; occupancy/available/reserved/occupied/blocked/attention totals; CSV export with formula-safe cells. Booking state and housekeeping are separate. Edits use the existing endpoints (move, block, release, housekeeping) with their permissions and audit. API `GET /properties/:code/room-dashboard`. Occupancy = occupied ÷ (room-nights − blocked), **to be confirmed by the client**. |
+| Choose a room number when booking | Done | Room-number dropdown per room line (free rooms of that type for the dates); the database still refuses a double booking (`room_unavailable`). |
+| Define new travel agents | Done | **Agents and companies** page and "Add a travel agent" in the booking form. `POST/PATCH /api/companies` (`company.manage`: reception and managers). Never deleted; inactive ones hide from the booking form. |
+| Nationality: all countries, searchable | Done | 249 ISO countries (`@hotel/shared` `COUNTRIES`); type-to-search picker for nationality and identity-document country. The API refuses unknown codes. |
+| KRA PIN mandatory, stars on mandatory fields, configurable | Done | `guests.kra_pin`; `guest_field_rules` (group-wide): each field is mandatory, mandatory for Kenyan guests, or optional; managers edit them on **Guests**. Default: phone and nationality mandatory, KRA PIN mandatory for Kenyan guests (**to be confirmed**). Extra occupants added at check-in need only a name. |
+| Policies: where to create them; policies in emails | Done | **Rates and policy › Edit policies** (managers): deposit, cancellation, times, fees, refund text, registration-card terms and new **hotel policies** (house rules), shown on the pro forma, registration card and confirmation email. |
+| Booking email with pro forma, receipt, details and policies | Done (needs SMTP) | `email_outbox` (append-only content, idempotency key, retries with backoff, SKIP LOCKED claims). Queued automatically when a booking is confirmed and the booker has an email; **Send again** on the booking. Attachments are PDFs of the pro forma and receipts. Sends only when `SMTP_URL` is set; until then messages wait. |
+| Pro forma at check-in | Done | "Print pro forma" and "Print registration card" in the check-in dialog. |
+| ETR receipt at checkout | Not started | That is the TIMS fiscal receipt (INT-02); needs the TIMS device integration. |
+| Prepaid credit: post nightly, warn the day before it runs out | Done | Day close already posts each night against the guest's credit. `GET /front-desk/credit` gives paid-through date and status; warnings on the Front desk page, the booking and the room dashboard. What "block" should do when credit reaches zero is **to be confirmed**. |
+| Auto-posting on/off per guest, managers only | Done | `stays.auto_post_room_charges`, `POST /stays/:id/auto-posting` (`stay.auto_posting`: managers), reason required and audited. When off, nights are posted at checkout. |
+| Credit never used for another guest | Done (already) | Payments belong to one folio; no transfer between guests exists. |
+| Room transfer | Done (already) | **Move room** on the booking (FD-05); now also from the room dashboard. |
+| Early departure, keep balance and nights for later (manager approval) | Not started | Next PR, after the client answers expiry and property scope. |
+| Approvals sent to managers (late checkout, cancellation, refunds) | Not started | Next PR: request queue with in-app and email notification. Today a manager signs off at the desk. |
+| Automatic day close at 07:59 | Not started | Waiting on Manish's decision: closing has been a manual manager action (3 Nov 2026). |
+| Hune door-lock cards | Not started | Needs the lock and encoder model and the Hune SDK from the client. |

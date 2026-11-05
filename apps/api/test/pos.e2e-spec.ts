@@ -71,7 +71,7 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
     const res = await api(user)
       .post(`/api/properties/${code}/reservations`, {
         source: 'phone',
-        guest: { firstName: 'Pos', lastName: `Guest${guestSeq}`, phone: `+2547200${String(10000 + guestSeq)}`, nationality: 'KE' },
+        guest: { firstName: 'Pos', lastName: `Guest${guestSeq}`, phone: `+2547200${String(10000 + guestSeq)}`, nationality: 'KE', kraPin: `A${String(200000000 + guestSeq)}P` },
         arrival: today,
         departure: addDays(today, 1),
         rooms: [{ roomTypeCode: 'STD', ratePlanCode: 'RACK', adults: 1 }],

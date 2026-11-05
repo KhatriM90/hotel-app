@@ -87,11 +87,11 @@ export const SEED_COMPANIES = [
 ];
 
 export const SEED_GUESTS = [
-  { firstName: 'Wanjiru', lastName: 'Kamau', phone: '+254712000101', email: 'wanjiru.kamau@example.com', nationality: 'KE' },
-  { firstName: 'Brian', lastName: 'Otieno', phone: '+254722000202', email: 'brian.otieno@example.com', nationality: 'KE' },
-  { firstName: 'Amina', lastName: 'Hassan', phone: '+254733000303', email: 'amina.hassan@example.com', nationality: 'KE' },
-  { firstName: 'James', lastName: 'Mwangi', phone: '+254744000404', email: 'james.mwangi@example.com', nationality: 'KE', company: 'Acme Logistics Ltd' },
-  { firstName: 'Grace', lastName: 'Njeri', phone: '+254755000505', email: 'grace.njeri@example.com', nationality: 'KE' },
+  { firstName: 'Wanjiru', lastName: 'Kamau', phone: '+254712000101', email: 'wanjiru.kamau@example.com', nationality: 'KE', kraPin: 'A001234561K' },
+  { firstName: 'Brian', lastName: 'Otieno', phone: '+254722000202', email: 'brian.otieno@example.com', nationality: 'KE', kraPin: 'A001234562K' },
+  { firstName: 'Amina', lastName: 'Hassan', phone: '+254733000303', email: 'amina.hassan@example.com', nationality: 'KE', kraPin: 'A001234563K' },
+  { firstName: 'James', lastName: 'Mwangi', phone: '+254744000404', email: 'james.mwangi@example.com', nationality: 'KE', kraPin: 'A001234564K', company: 'Acme Logistics Ltd' },
+  { firstName: 'Grace', lastName: 'Njeri', phone: '+254755000505', email: 'grace.njeri@example.com', nationality: 'KE', kraPin: 'A001234565K' },
   { firstName: 'Sarah', lastName: 'Thompson', phone: '+447700900606', email: 'sarah.thompson@example.co.uk', nationality: 'GB' },
 ];
 
@@ -244,6 +244,15 @@ export const SEED_PROPERTIES: SeedProperty[] = [
     },
   },
 ];
+
+/** Placeholder house rules (test data, not the client's): shown in guest emails and on the registration card. */
+export const SEED_HOTEL_POLICIES = [
+  'Smoking is not allowed in rooms; please use the designated smoking areas.',
+  'Quiet hours are 22:00 to 07:00.',
+  'Visitors are welcome in public areas; overnight visitors must be registered at reception.',
+  'Pets are not allowed, except assistance animals.',
+  'Lost room keys or cards are charged at replacement cost.',
+].join('\n');
 
 export function registrationTerms(policy: SeedPolicy): string {
   return REGISTRATION_TERMS.replace('{checkIn}', policy.checkInTime).replace('{checkOut}', policy.checkOutTime);

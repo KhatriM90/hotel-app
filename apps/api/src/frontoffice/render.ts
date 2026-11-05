@@ -134,6 +134,7 @@ ${stays}
   <tr><td>Deposit due by</td><td class="num">${esc(c.deposit?.dueDate ?? '')}</td></tr>
 </tbody></table>
 <div class="terms">${esc(c.policy?.refundPolicy ?? '')}</div>
+${c.policy?.hotelPolicies ? `<h3>Hotel policies</h3><div class="terms">${esc(c.policy.hotelPolicies)}</div>` : ''}
 <p class="muted">This pro forma is a quotation, not a tax invoice. Prices include VAT and catering levy.</p>`, sub);
   }
   // INVOICE
@@ -185,6 +186,7 @@ export function renderRegistrationCard(d: Json): string {
 <div class="grid">
   <div><span>Guest</span>${esc(d.guest.name)}</div>
   <div><span>Nationality</span>${esc(d.guest.nationality ?? '')}</div>
+  <div><span>KRA PIN</span>${esc(d.guest.kraPin ?? '')}</div>
   <div><span>Phone</span>${esc(d.guest.phone ?? '')}</div>
   <div><span>Email</span>${esc(d.guest.email ?? '')}</div>
   <div><span>Company</span>${esc(d.guest.company ?? '')}</div>
@@ -199,6 +201,7 @@ export function renderRegistrationCard(d: Json): string {
   <div><span>Other occupants</span>${esc((s.occupants as Json[]).filter((o) => !o.isPrimary).map((o) => o.name).join(', ') || '—')}</div>
 </div>
 <div class="terms">${esc(terms)}</div>
+${d.policy?.hotelPolicies ? `<h3>Hotel policies</h3><div class="terms">${esc(d.policy.hotelPolicies)}</div>` : ''}
 <div class="sign">
   <div>${reg.signature ? `<img src="${esc(reg.signature)}" alt="Guest signature">` : ''}Guest signature${reg.signedName ? `: ${esc(reg.signedName)}` : ''}${
     reg.acknowledgedAt ? `<br>Acknowledged ${esc(new Date(reg.acknowledgedAt).toLocaleString('en-KE', { timeZone: 'Africa/Nairobi' }))} (${esc(label(reg.method))})` : ''

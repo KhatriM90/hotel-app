@@ -54,6 +54,12 @@ export const PERMISSIONS = {
   'guest.manage': ['owner', 'admin', 'area_manager', 'manager', 'receptionist'],
   // FD-02, AT-14: identity documents are restricted; waiters, bar and kitchen staff never see them.
   'guest.identity': ['owner', 'area_manager', 'manager', 'receptionist'],
+  // Travel agents and companies (client request, 5 Nov 2026): reception may add them.
+  'company.manage': ['owner', 'admin', 'area_manager', 'manager', 'receptionist'],
+  // Which guest fields are mandatory, group-wide.
+  'guest.configure': ['owner', 'admin', 'area_manager', 'manager'],
+  // Switch nightly room-charge posting off or on for one stay; managers only.
+  'stay.auto_posting': ['owner', 'area_manager', 'manager'],
   'guest_request.manage': ['owner', 'admin', 'area_manager', 'manager', 'receptionist', 'housekeeper'],
   'businessday.close': ['owner', 'admin', 'area_manager', 'manager'],
   // CFG-01: business-day cut-off per property and outlet, POS outlet settings.

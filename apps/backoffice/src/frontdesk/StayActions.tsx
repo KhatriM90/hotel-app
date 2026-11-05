@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api';
-import { base, ErrorText, Field, kes, Modal, useAction, useLoad, useSession } from '../ui';
+import { base, ErrorText, Field, kes, Modal, openPrintable, useAction, useLoad, useSession } from '../ui';
+import { CountrySelect } from './GuestFields';
 
 /** Dialogs for the stay actions reception performs (FD-03, FD-05, FD-06, FD-08, RES-03, RES-06). */
 
@@ -111,8 +112,8 @@ export function CheckInModal({ stay, onClose, onDone }: { stay: StayRef; onClose
               <Field label="Number">
                 <input required value={doc.documentNumber} onChange={(e) => setDoc({ ...doc, documentNumber: e.target.value })} />
               </Field>
-              <Field label="Country">
-                <input required maxLength={2} value={doc.issuingCountry} onChange={(e) => setDoc({ ...doc, issuingCountry: e.target.value.toUpperCase() })} />
+              <Field label="Issuing country" required>
+                <CountrySelect required value={doc.issuingCountry} onChange={(issuingCountry) => setDoc({ ...doc, issuingCountry })} />
               </Field>
               <Field label="Expiry">
                 <input type="date" value={doc.expiryDate} onChange={(e) => setDoc({ ...doc, expiryDate: e.target.value })} />
@@ -157,6 +158,24 @@ export function CheckInModal({ stay, onClose, onDone }: { stay: StayRef; onClose
         <ErrorText error={action.error} />
         <div className="ys-actions">
           <button type="button" className="ys-btn ghost" onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            className="ys-btn ghost"
+            title="Issues a pro forma for the stay and opens it to print or hand to the guest"
+            onClick={async () => {
+              const doc = await action.run(({ key }) => api.post<{ id: string }>(`${base(property.code)}/reservations/${stay.reservationId}/proforma`, {}, key));
+              if (doc) void openPrintable(`${base(property.code)}/documents/${(doc as { id: string }).id}/html`);
+            }}
+          >
+            Print pro forma
+          </button>
+          <button
+            type="button"
+            className="ys-btn ghost"
+            onClick={() => openPrintable(`${base(property.code)}/stays/${stay.id}/registration-card`)}
+          >
+            Print registration card
+          </button>
           <button className="ys-btn" disabled={action.busy}>{action.busy ? 'Checking in…' : 'Check in'}</button>
         </div>
       </form>
