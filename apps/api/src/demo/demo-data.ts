@@ -10,6 +10,8 @@ export interface DemoGuest {
   phone: string;
   email?: string;
   nationality: string;
+  /** Invented KRA PIN (Kenyan guests; mandatory for them since 5 Nov 2026). */
+  kraPin?: string;
   /** Identity document recorded at check-in (FD-03). */
   id: { documentType: 'national_id' | 'passport'; documentNumber: string; issuingCountry: string };
   preferences?: string;
@@ -22,6 +24,7 @@ const ke = (key: string, firstName: string, lastName: string, n: number, idNumbe
   phone: `+254700${String(550000 + n)}`,
   email: `${firstName}.${lastName}`.toLowerCase().replace(/[^a-z.]/g, '') + '@demo.yeastay.example',
   nationality: 'KE',
+  kraPin: `A${String(990000000 + n)}Z`,
   id: { documentType: 'national_id', documentNumber: idNumber, issuingCountry: 'KE' },
   preferences,
 });

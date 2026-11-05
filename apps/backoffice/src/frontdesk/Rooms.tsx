@@ -148,6 +148,87 @@ interface Policy {
   checkOutTime: string;
   earlyCheckInFee: string;
   lateCheckOutFee: string;
+  registrationTerms: string;
+  hotelPolicies: string;
+}
+
+/**
+ * Edits the property's booking policy and the hotel policies (house rules)
+ * that go into guest emails, the pro forma and the registration card (RES-07,
+ * client request 5 Nov 2026). New bookings take a copy of the terms; existing
+ * bookings keep the terms they were made under.
+ */
+function PolicyModal({ policy, onClose, onDone }: { policy: Policy; onClose: () => void; onDone: () => void }) {
+  const { property } = useSession();
+  const [f, setF] = useState({
+    ...policy,
+    depositValue: String(Number(policy.depositValue)),
+    earlyCheckInFee: String(Number(policy.earlyCheckInFee)),
+    lateCheckOutFee: String(Number(policy.lateCheckOutFee)),
+  });
+  const action = useAction();
+  const num = (k: keyof Policy) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: Number(e.target.value) });
+  const str = (k: keyof Policy) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });
+  return (
+    <Modal title="Booking and hotel policies" onClose={onClose} wide>
+      <form
+        className="ys-form"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const money = (v: string) => (Number(v) || 0).toFixed(2);
+          const ok = await action.run(() =>
+            api.put(`${base(property.code)}/policy`, {
+              depositType: f.depositType, depositValue: String(Number(f.depositValue) || 0), depositDueDays: f.depositDueDays, holdMinutes: f.holdMinutes,
+              freeCancellationHours: f.freeCancellationHours, lateCancellationNights: f.lateCancellationNights, noShowNights: f.noShowNights,
+              refundPolicy: f.refundPolicy, checkInTime: f.checkInTime, checkOutTime: f.checkOutTime,
+              earlyCheckInFee: money(f.earlyCheckInFee), lateCheckOutFee: money(f.lateCheckOutFee),
+              registrationTerms: f.registrationTerms, hotelPolicies: f.hotelPolicies,
+            }),
+          );
+          if (ok) onDone();
+        }}
+      >
+        <p className="ys-muted">Changes apply to new bookings. Bookings already made keep the cancellation and deposit terms they were made under.</p>
+        <div className="ys-row">
+          <Field label="Deposit">
+            <select value={f.depositType} onChange={str('depositType')}>
+              <option value="none">None</option>
+              <option value="percent">Percent of the stay</option>
+              <option value="nights">Number of nights</option>
+            </select>
+          </Field>
+          {f.depositType !== 'none' && <Field label={f.depositType === 'percent' ? 'Percent' : 'Nights'}><input inputMode="decimal" value={f.depositValue} onChange={str('depositValue')} /></Field>}
+          <Field label="Deposit due (days before arrival)"><input type="number" min={0} value={f.depositDueDays} onChange={num('depositDueDays')} /></Field>
+          <Field label="Hold rooms for (minutes)"><input type="number" min={5} value={f.holdMinutes} onChange={num('holdMinutes')} /></Field>
+        </div>
+        <div className="ys-row">
+          <Field label="Free cancellation (hours before arrival)"><input type="number" min={0} value={f.freeCancellationHours} onChange={num('freeCancellationHours')} /></Field>
+          <Field label="Late cancellation charge (nights)"><input type="number" min={0} value={f.lateCancellationNights} onChange={num('lateCancellationNights')} /></Field>
+          <Field label="No-show charge (nights)"><input type="number" min={0} value={f.noShowNights} onChange={num('noShowNights')} /></Field>
+        </div>
+        <div className="ys-row">
+          <Field label="Check-in from"><input type="time" value={f.checkInTime} onChange={str('checkInTime')} /></Field>
+          <Field label="Check-out by"><input type="time" value={f.checkOutTime} onChange={str('checkOutTime')} /></Field>
+          <Field label="Early check-in fee (KES)"><input inputMode="decimal" value={f.earlyCheckInFee} onChange={str('earlyCheckInFee')} /></Field>
+          <Field label="Late check-out fee (KES)"><input inputMode="decimal" value={f.lateCheckOutFee} onChange={str('lateCheckOutFee')} /></Field>
+        </div>
+        <Field label="Cancellation and refund policy" hint="Shown on the booking, the pro forma and the confirmation email.">
+          <textarea rows={3} value={f.refundPolicy} onChange={str('refundPolicy')} />
+        </Field>
+        <Field label="Hotel policies (house rules)" hint="One rule per line. Shown in the confirmation email, on the pro forma and on the registration card.">
+          <textarea rows={6} value={f.hotelPolicies} onChange={str('hotelPolicies')} />
+        </Field>
+        <Field label="Registration card terms" hint="Printed above the guest's signature at check-in.">
+          <textarea rows={6} value={f.registrationTerms} onChange={str('registrationTerms')} />
+        </Field>
+        <ErrorText error={action.error} />
+        <div className="ys-actions">
+          <button type="button" className="ys-btn ghost" onClick={onClose}>Cancel</button>
+          <button className="ys-btn" disabled={action.busy}>Save policies</button>
+        </div>
+      </form>
+    </Modal>
+  );
 }
 
 function AddPriceModal({ plan, types, onClose, onDone }: { plan: RatePlan; types: RoomType[]; onClose: () => void; onDone: () => void }) {
@@ -202,7 +283,9 @@ export function RatesPage() {
   const types = useLoad(() => api.get<RoomType[]>(`${base(property.code)}/room-types`), [property.code]);
   const policy = useLoad(() => api.get<Policy>(`${base(property.code)}/policy`), [property.code]);
   const [adding, setAdding] = useState<RatePlan | null>(null);
+  const [editingPolicy, setEditingPolicy] = useState(false);
   const canManage = hasPermission(me.roles, 'rate.manage');
+  const canPolicy = hasPermission(me.roles, 'policy.manage');
   const p = policy.data;
   return (
     <>
@@ -223,7 +306,11 @@ export function RatesPage() {
       )}
       {p && (
         <section className="ys-section ys-card">
-          <h2>Booking policy</h2>
+          <div className="ys-page-head">
+            <h2>Booking and hotel policies</h2>
+            <span className="spacer" />
+            {canPolicy && <button className="ys-btn small" onClick={() => setEditingPolicy(true)}>Edit policies</button>}
+          </div>
           <p>
             Deposit: {p.depositType === 'none' ? 'none' : p.depositType === 'percent' ? `${Number(p.depositValue)}% of the stay` : `${Number(p.depositValue)} night(s)`}, due{' '}
             {p.depositDueDays} day(s) before arrival. Holds last {p.holdMinutes} minutes.
@@ -235,8 +322,11 @@ export function RatesPage() {
             Check-in {p.checkInTime}, check-out {p.checkOutTime}. Early check-in {kes(p.earlyCheckInFee)}, late check-out {kes(p.lateCheckOutFee)}.
           </p>
           <p className="ys-muted">{p.refundPolicy}</p>
+          <h3>Hotel policies</h3>
+          {p.hotelPolicies ? <p className="ys-pre">{p.hotelPolicies}</p> : <p className="ys-muted">None written yet{canPolicy ? '. Use Edit policies to add the house rules.' : '.'}</p>}
         </section>
       )}
+      {editingPolicy && p && <PolicyModal policy={p} onClose={() => setEditingPolicy(false)} onDone={() => { setEditingPolicy(false); policy.reload(); }} />}
       {(plans.data ?? []).map((plan) => (
         <section className="ys-section" key={plan.id}>
           <div className="ys-page-head">

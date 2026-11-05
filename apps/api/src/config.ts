@@ -25,6 +25,15 @@ const schema = z.object({
    */
   ALLOW_FUTURE_DAY_CLOSE: bool.default('false'),
   CORS_ORIGINS: z.string().optional(),
+  /**
+   * Guest emails (booking confirmation with pro forma, receipts and policies).
+   * smtp://user:pass@host:587 or smtps://…:465. Without it, emails wait in the
+   * outbox as "not sent yet" and the reservation screen says so.
+   */
+  SMTP_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
+  MAIL_FROM: z.preprocess((v) => (v === '' ? undefined : v), z.string().default('YeaStay Reservations <reservations@yeastay.local>')),
+  /** Turns the background email sender off (tests send by calling it directly). */
+  EMAIL_SENDER_ENABLED: bool.default('true'),
 });
 
 export type AppConfig = z.infer<typeof schema>;

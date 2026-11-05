@@ -198,7 +198,8 @@ export class FrontDeskService {
 
       // Occupants (FD-03): named guests in the room; the primary guest is already one.
       for (const o of input.occupants ?? []) {
-        const guestId = 'id' in o ? o.id : (await this.guests.create(q, o)).id;
+        // Extra occupants need only a name; the booker's profile carries the mandatory fields.
+        const guestId = 'id' in o ? o.id : (await this.guests.create(q, o, { enforceRules: false })).id;
         await q.query(
           `INSERT INTO stay_occupants (stay_id, property_id, guest_id, is_primary, added_by) VALUES ($1, $2, $3, false, $4) ON CONFLICT DO NOTHING`,
           [stay.id, propertyId, guestId, this.actor()],
@@ -288,7 +289,7 @@ export class FrontDeskService {
       const detail = await this.reservations.detail(q, propertyId, stay.reservationId);
       const s = detail.stays.find((x) => x.id === stayId)!;
       const { rows: [guest] } = await q.query(
-        `SELECT g.first_name || ' ' || g.last_name AS name, g.phone, g.email, g.nationality, g.address, c.name AS company
+        `SELECT g.first_name || ' ' || g.last_name AS name, g.phone, g.email, g.nationality, g.kra_pin AS "kraPin", g.address, c.name AS company
            FROM guests g LEFT JOIN companies c ON c.id = g.company_id WHERE g.id = $1`,
         [stay.primaryGuestId],
       );
@@ -310,7 +311,8 @@ export class FrontDeskService {
         identity: docs[0]
           ? { documentType: docs[0].documentType, documentNumber: `${'*'.repeat(Math.max(0, docs[0].documentNumber.length - 3))}${docs[0].documentNumber.slice(-3)}`, issuingCountry: docs[0].issuingCountry }
           : null,
-        policy: detail.policy,
+        // House rules are the hotel's current ones; the booking terms stay as agreed.
+        policy: detail.policy ? { ...detail.policy, hotelPolicies: (await this.rates.policy(q, propertyId)).hotelPolicies ?? '' } : null,
         registration: reg,
       };
     });
@@ -540,7 +542,11 @@ export class FrontDeskService {
         throw conflict(`${p.d} has not started yet at this property (today is ${p.today}); it cannot be closed in advance`, 'business_date_in_future');
       }
       await assertOutletDaysClosed(q, propertyId, p.d);
-      const { rows: stays } = await q.query<{ id: string }>(`SELECT id FROM stays WHERE property_id = $1 AND status = 'checked_in' ORDER BY number`, [propertyId]);
+      // A stay with auto-posting switched off by a manager keeps its nights for checkout.
+      const { rows: stays } = await q.query<{ id: string }>(
+        `SELECT id FROM stays WHERE property_id = $1 AND status = 'checked_in' AND auto_post_room_charges ORDER BY number`,
+        [propertyId],
+      );
       let posted = 0;
       for (const { id } of stays) {
         const stay = await this.reservations.stay(q, propertyId, id, true);
@@ -558,6 +564,93 @@ export class FrontDeskService {
       await q.query('UPDATE properties SET current_business_date = $2 WHERE id = $1', [propertyId, next]);
       await this.audit.record({ action: 'business_day.close', entityType: 'property', entityId: propertyId, propertyId, businessDate: p.d, newValues: { posted, next } });
       return { closedDate: p.d, businessDate: next, roomChargesPosted: posted, arrivalsNotCheckedIn: notArrived[0].n };
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Prepaid credit and nightly auto-posting (client request, 5 Nov 2026)
+  // -------------------------------------------------------------------------
+
+  /**
+   * For every in-house stay: how far the money paid so far covers the nights
+   * still to be posted. A guest who paid 50,000 for five nights at 10,000 has
+   * credit that the nightly posting uses up; the day before it runs out the
+   * desk sees a warning. Credit belongs to the stay's own folio and is never
+   * used for another guest.
+   */
+  async creditStatus(propertyId: string, stayId?: string) {
+    return this.db.tx(async (q) => {
+      const bd = await businessDate(q, propertyId);
+      const { rows } = await q.query<{
+        stayId: string; stayNumber: string; reservationId: string; roomNumber: string | null; guestName: string;
+        departureDate: string; autoPost: boolean; folioId: string; folioNumber: string; charges: string; paid: string; pending: string;
+        nights: Array<{ date: string; amount: string }> | null;
+      }>(
+        `SELECT s.id AS "stayId", s.number AS "stayNumber", s.reservation_id AS "reservationId", rm.number AS "roomNumber",
+                g.first_name || ' ' || g.last_name AS "guestName", s.departure_date AS "departureDate",
+                s.auto_post_room_charges AS "autoPost", f.id AS "folioId", f.number AS "folioNumber",
+                b.charges_total::text AS charges, b.payments_confirmed::text AS paid, b.payments_pending::text AS pending,
+                (SELECT json_agg(json_build_object('date', n.night_date, 'amount', n.amount::text) ORDER BY n.night_date)
+                   FROM stay_nights n
+                  WHERE n.stay_id = s.id AND n.night_date >= $2::date
+                    AND NOT EXISTS (SELECT 1 FROM folio_charges c WHERE c.stay_id = s.id AND c.room_night_date = n.night_date)) AS nights
+           FROM stays s
+           JOIN guests g ON g.id = s.primary_guest_id
+           LEFT JOIN rooms rm ON rm.id = s.room_id
+           JOIN folios f ON f.stay_id = s.id AND f.is_primary
+           JOIN folio_balances b ON b.folio_id = f.id
+          WHERE s.property_id = $1 AND s.status = 'checked_in' AND ($3::uuid IS NULL OR s.id = $3)
+          ORDER BY rm.number NULLS LAST, s.number`,
+        [propertyId, bd, stayId ?? null],
+      );
+      return rows.map((r) => {
+        const credit = Money.of(r.paid).subtract(r.charges);
+        const nights = r.nights ?? [];
+        let left = credit;
+        let covered = 0;
+        for (const n of nights) {
+          if (left.compare(n.amount) < 0) break;
+          left = left.subtract(n.amount);
+          covered++;
+        }
+        const tonight = nights[0]?.date === bd;
+        const status =
+          Money.of(r.paid).isZero()
+            ? 'no_prepayment'
+            : covered === nights.length
+              ? 'covered'
+              : tonight && covered === 0
+                ? 'exhausted'
+                : tonight && covered === 1
+                  ? 'runs_out_tomorrow'
+                  : 'ok';
+        return {
+          stayId: r.stayId, stayNumber: r.stayNumber, reservationId: r.reservationId, roomNumber: r.roomNumber, guestName: r.guestName,
+          departureDate: r.departureDate, folioId: r.folioId, folioNumber: r.folioNumber, autoPostRoomCharges: r.autoPost,
+          paid: r.paid, pendingPayments: r.pending, charges: r.charges, credit: credit.toString(),
+          nightsUnposted: nights.length, nightsCovered: covered,
+          // The morning the prepaid nights end: the guest has paid up to (not including) this night.
+          paidThrough: covered === 0 ? (nights[0]?.date ?? bd) : addDays(nights[covered - 1].date, 1),
+          status,
+        };
+      });
+    });
+  }
+
+  /** Managers switch nightly room-charge posting off (nights are then posted at checkout) or back on. Audited. */
+  async setAutoPosting(propertyId: string, stayId: string, enabled: boolean, reason: string) {
+    return this.db.tx(async (q) => {
+      const stay = await this.reservations.stay(q, propertyId, stayId, true);
+      if (!['confirmed', 'checked_in', 'hold', 'enquiry'].includes(stay.status)) {
+        throw conflict(`Stay ${stay.number} is ${stay.status}; nothing is left to post`, 'invalid_transition');
+      }
+      const { rows: [before] } = await q.query<{ v: boolean }>('SELECT auto_post_room_charges AS v FROM stays WHERE id = $1', [stayId]);
+      await q.query('UPDATE stays SET auto_post_room_charges = $2 WHERE id = $1', [stayId, enabled]);
+      await this.audit.record({
+        action: 'stay.auto_posting', entityType: 'stay', entityId: stayId, propertyId, reason,
+        previousValues: { autoPostRoomCharges: before.v }, newValues: { autoPostRoomCharges: enabled },
+      });
+      return { stayId, stayNumber: stay.number, autoPostRoomCharges: enabled };
     });
   }
 

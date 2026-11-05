@@ -13,7 +13,7 @@
 import { Client } from 'pg';
 import { hashPassword } from './auth/password';
 import { seedPos } from './seed-pos';
-import { registrationTerms, SEED_COMPANIES, SEED_GUESTS, SEED_PROPERTIES } from './seed-data';
+import { registrationTerms, SEED_COMPANIES, SEED_HOTEL_POLICIES, SEED_GUESTS, SEED_PROPERTIES } from './seed-data';
 
 interface SeedUser {
   username: string;
@@ -98,10 +98,10 @@ async function seedMasterData(client: Client, propertyId: Map<string, string>): 
 
   for (const g of SEED_GUESTS) {
     await client.query(
-      `INSERT INTO guests (first_name, last_name, phone, email, nationality, company_id)
-       SELECT $1, $2, $3, $4, $5, $6
+      `INSERT INTO guests (first_name, last_name, phone, email, nationality, company_id, kra_pin)
+       SELECT $1, $2, $3, $4, $5, $6, $7
         WHERE NOT EXISTS (SELECT 1 FROM guests WHERE phone = $3)`,
-      [g.firstName, g.lastName, g.phone, g.email, g.nationality, g.company ? companyId.get(g.company) : null],
+      [g.firstName, g.lastName, g.phone, g.email, g.nationality, g.company ? companyId.get(g.company) : null, 'kraPin' in g ? g.kraPin : null],
     );
   }
 
@@ -152,11 +152,12 @@ async function seedMasterData(client: Client, propertyId: Map<string, string>): 
     await client.query(
       `UPDATE booking_policies SET deposit_type = $2, deposit_value = $3, deposit_due_days = $4, default_hold_minutes = $5,
               free_cancellation_hours = $6, late_cancellation_nights = $7, no_show_nights = $8, refund_policy = $9,
-              check_in_time = $10, check_out_time = $11, early_check_in_fee = $12, late_check_out_fee = $13, registration_terms = $14
+              check_in_time = $10, check_out_time = $11, early_check_in_fee = $12, late_check_out_fee = $13, registration_terms = $14,
+              hotel_policies = CASE WHEN hotel_policies = '' THEN $15 ELSE hotel_policies END
         WHERE property_id = $1 AND updated_by IS NULL`,
       [pid, pol.depositType, pol.depositValue, pol.depositDueDays, pol.holdMinutes, pol.freeCancellationHours,
        pol.lateCancellationNights, pol.noShowNights, pol.refundPolicy, pol.checkInTime, pol.checkOutTime,
-       pol.earlyCheckInFee, pol.lateCheckOutFee, registrationTerms(pol)],
+       pol.earlyCheckInFee, pol.lateCheckOutFee, registrationTerms(pol), SEED_HOTEL_POLICIES],
     );
   }
 }

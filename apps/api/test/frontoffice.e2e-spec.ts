@@ -33,7 +33,7 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
   };
 
   let guestSeq = 0;
-  const newGuest = () => ({ firstName: 'Test', lastName: `Guest${++guestSeq}`, phone: `+2547100${String(10000 + guestSeq)}`, nationality: 'KE' });
+  const newGuest = () => ({ firstName: 'Test', lastName: `Guest${++guestSeq}`, phone: `+2547100${String(10000 + guestSeq)}`, nationality: 'KE', kraPin: `A${String(100000000 + guestSeq)}K` });
   const identity = () => ({ documentType: 'national_id', documentNumber: `${30000000 + guestSeq}`, issuingCountry: 'KE' });
 
   const book = (user: string, body: Record<string, unknown>, code = 'K1') =>

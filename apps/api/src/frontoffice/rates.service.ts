@@ -44,6 +44,8 @@ export interface PolicySnapshot extends BookingPolicy {
   earlyCheckInFee: string;
   lateCheckOutFee: string;
   registrationTerms: string;
+  /** House rules for guest emails and the registration card; missing on snapshots made before 0016. */
+  hotelPolicies?: string;
 }
 
 const POLICY_COLUMNS = `
@@ -52,7 +54,8 @@ const POLICY_COLUMNS = `
   late_cancellation_nights AS "lateCancellationNights", no_show_nights AS "noShowNights",
   refund_policy AS "refundPolicy", to_char(check_in_time, 'HH24:MI') AS "checkInTime",
   to_char(check_out_time, 'HH24:MI') AS "checkOutTime", early_check_in_fee AS "earlyCheckInFee",
-  late_check_out_fee AS "lateCheckOutFee", registration_terms AS "registrationTerms"`;
+  late_check_out_fee AS "lateCheckOutFee", registration_terms AS "registrationTerms",
+  hotel_policies AS "hotelPolicies"`;
 
 const PLAN_COLUMNS = `
   rp.id, rp.code, rp.name, rp.is_negotiated AS "isNegotiated", rp.company_id AS "companyId", c.name AS "companyName",
@@ -208,6 +211,7 @@ export class RatesService {
       earlyCheckInFee: 'early_check_in_fee',
       lateCheckOutFee: 'late_check_out_fee',
       registrationTerms: 'registration_terms',
+      hotelPolicies: 'hotel_policies',
     };
     const entries = Object.entries(input).filter(([k, v]) => v !== undefined && map[k]);
     if (!entries.length) throw new BadRequestException('Nothing to update');

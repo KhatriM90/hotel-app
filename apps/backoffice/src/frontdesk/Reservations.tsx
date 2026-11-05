@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { addDays, BOOKING_SOURCES, nightsBetween, STAY_STATUSES } from '@hotel/shared';
+import { addDays, BOOKING_SOURCES, hasPermission, nightsBetween, STAY_STATUSES } from '@hotel/shared';
 import { api } from '../api';
 import { base, ErrorText, Field, kes, label, openPrintable, StatusBadge, useAction, useLoad, useSession } from '../ui';
+import { CompanyModal } from './Agents';
+import { contactBody, contactProblem, ContactFields, EMPTY_CONTACT, GuestContact, useGuestRules } from './GuestFields';
+import { EmailsSection, StayCreditPanel } from './StayCredit';
 import { AmendModal, CancelModal, CheckInModal, LateCheckoutModal, MoveModal, StayRef } from './StayActions';
 
 /** Reservations: list, new booking and the booking record (RES-02 to RES-08). */
@@ -107,6 +110,8 @@ interface RoomLine {
   adults: number;
   children: number;
   override: string;
+  /** A specific room number, or empty to let the system pick a free one. */
+  roomId?: string;
   quote?: { total: string; nights: Array<{ date: string; amount: string; seasonName: string }> } | null;
   quoteError?: string | null;
 }
@@ -153,10 +158,12 @@ function GuestPicker({ value, onChange }: { value: Guest | null; onChange: (g: G
 }
 
 export function NewReservationPage({ params }: { params: Record<string, string> }) {
-  const { property, go } = useSession();
+  const { property, go, me } = useSession();
   const types = useLoad(() => api.get<RoomType[]>(`${base(property.code)}/room-types`), [property.code]);
   const plans = useLoad(() => api.get<RatePlan[]>(`${base(property.code)}/rate-plans`), [property.code]);
   const companies = useLoad(() => api.get<Array<{ id: string; name: string; kind: string }>>('/companies'), []);
+  const [adding, setAdding] = useState<'agent' | 'company' | null>(null);
+  const canAddCompany = hasPermission(me.roles, 'company.manage');
   const arrivalDefault = params.arrival ?? property.currentBusinessDate;
   const [arrival, setArrival] = useState(arrivalDefault);
   const [departure, setDeparture] = useState(nextDay(arrivalDefault));
@@ -168,9 +175,14 @@ export function NewReservationPage({ params }: { params: Record<string, string> 
   const [agentReference, setAgentRef] = useState('');
   const [notes, setNotes] = useState('');
   const [existing, setExisting] = useState<Guest | null>(null);
-  const [guest, setGuest] = useState({ firstName: '', lastName: '', phone: '', email: '', nationality: 'KE' });
+  const [guest, setGuest] = useState({ firstName: '', lastName: '' });
+  const [contact, setContact] = useState<GuestContact>(EMPTY_CONTACT);
+  const rules = useGuestRules();
+  const [freeRooms, setFreeRooms] = useState<Record<string, Array<{ id: string; number: string; floor: string | null; hkStatus: string }>>>({});
   const [overrideReason, setOverrideReason] = useState('');
-  const [lines, setLines] = useState<RoomLine[]>([{ roomTypeCode: params.roomTypeCode ?? '', ratePlanCode: 'RACK', adults: 1, children: 0, override: '' }]);
+  const [lines, setLines] = useState<RoomLine[]>([
+    { roomTypeCode: params.roomTypeCode ?? '', ratePlanCode: 'RACK', adults: 1, children: 0, override: '', roomId: params.roomId ?? '' },
+  ]);
   const action = useAction<{ id: string }>();
 
   useEffect(() => {
@@ -194,12 +206,43 @@ export function NewReservationPage({ params }: { params: Record<string, string> 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteKey, property.code]);
 
+  // Free room numbers per room type for the dates, so reception can pick one (client request, 5 Nov 2026).
+  const typeKey = JSON.stringify([arrival, departure, [...new Set(lines.map((l) => l.roomTypeCode))]]);
+  useEffect(() => {
+    if (departure <= arrival) return;
+    for (const code of new Set(lines.map((l) => l.roomTypeCode).filter(Boolean))) {
+      api
+        .get<Array<{ id: string; number: string; floor: string | null; hkStatus: string }>>(
+          `${base(property.code)}/availability/rooms?roomTypeCode=${encodeURIComponent(code)}&arrival=${arrival}&departure=${departure}`,
+        )
+        .then(
+          (rooms) => {
+            setFreeRooms((f) => ({ ...f, [code]: rooms }));
+            // A room chosen earlier that is no longer free for these dates is cleared.
+            setLines((ls) => ls.map((l) => (l.roomTypeCode === code && l.roomId && !rooms.some((r) => r.id === l.roomId) ? { ...l, roomId: '' } : l)));
+          },
+          () => setFreeRooms((f) => ({ ...f, [code]: [] })),
+        );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeKey, property.code]);
+
   function setLine(i: number, patch: Partial<RoomLine>) {
     setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const problem = existing ? null : contactProblem(contact, rules);
+    if (problem) {
+      action.setError(problem);
+      return;
+    }
+    const picked = lines.map((l) => l.roomId).filter(Boolean);
+    if (new Set(picked).size !== picked.length) {
+      action.setError('The same room number is chosen twice');
+      return;
+    }
     const res = await action.run(({ key, approval }) =>
       api.post<{ id: string }>(
         `${base(property.code)}/reservations`,
@@ -215,12 +258,13 @@ export function NewReservationPage({ params }: { params: Record<string, string> 
           notes: notes || undefined,
           guest: existing
             ? { id: existing.id }
-            : { firstName: guest.firstName, lastName: guest.lastName, phone: guest.phone || undefined, email: guest.email || undefined, nationality: guest.nationality || undefined },
+            : { firstName: guest.firstName, lastName: guest.lastName, ...contactBody(contact) },
           rooms: lines.map((l) => ({
             roomTypeCode: l.roomTypeCode,
             ratePlanCode: l.ratePlanCode,
             adults: l.adults,
             children: l.children,
+            roomId: l.roomId || undefined,
             rateOverride: l.override ? { amountPerNight: l.override, reason: overrideReason } : undefined,
           })),
           approval,
@@ -270,11 +314,9 @@ export function NewReservationPage({ params }: { params: Record<string, string> 
           <GuestPicker value={existing} onChange={setExisting} />
           {!existing && (
             <div className="ys-row">
-              <Field label="First name"><input required value={guest.firstName} onChange={(e) => setGuest({ ...guest, firstName: e.target.value })} /></Field>
-              <Field label="Last name"><input required value={guest.lastName} onChange={(e) => setGuest({ ...guest, lastName: e.target.value })} /></Field>
-              <Field label="Phone"><input value={guest.phone} onChange={(e) => setGuest({ ...guest, phone: e.target.value })} placeholder="+254…" /></Field>
-              <Field label="Email"><input type="email" value={guest.email} onChange={(e) => setGuest({ ...guest, email: e.target.value })} /></Field>
-              <Field label="Nationality"><input maxLength={2} value={guest.nationality} onChange={(e) => setGuest({ ...guest, nationality: e.target.value.toUpperCase() })} /></Field>
+              <Field label="First name" required><input required value={guest.firstName} onChange={(e) => setGuest({ ...guest, firstName: e.target.value })} /></Field>
+              <Field label="Last name" required><input required value={guest.lastName} onChange={(e) => setGuest({ ...guest, lastName: e.target.value })} /></Field>
+              <ContactFields value={contact} onChange={setContact} rules={rules} compact />
             </div>
           )}
         </fieldset>
@@ -294,6 +336,27 @@ export function NewReservationPage({ params }: { params: Record<string, string> 
           </Field>
           {agentId && <Field label="Agent reference"><input value={agentReference} onChange={(e) => setAgentRef(e.target.value)} /></Field>}
         </div>
+        {canAddCompany && (
+          <p className="ys-muted">
+            Not in the list? <button type="button" className="ys-link" onClick={() => setAdding('agent')}>Add a travel agent</button> or{' '}
+            <button type="button" className="ys-link" onClick={() => setAdding('company')}>add a company</button>.
+          </p>
+        )}
+        {adding && (
+          <CompanyModal
+            kind={adding}
+            company={null}
+            onClose={() => setAdding(null)}
+            onSaved={(c) => {
+              setAdding(null);
+              companies.reload();
+              if (c.kind === 'agent') {
+                setAgentId(c.id);
+                setSource('agent');
+              } else setCompanyId(c.id);
+            }}
+          />
+        )}
 
         <fieldset>
           <legend>Rooms (RES-08: one booking can hold several rooms)</legend>
@@ -303,8 +366,20 @@ export function NewReservationPage({ params }: { params: Record<string, string> 
               <div key={i} className="ys-room-line">
                 <div className="ys-row">
                   <Field label="Room type">
-                    <select value={l.roomTypeCode} onChange={(e) => setLine(i, { roomTypeCode: e.target.value })}>
+                    <select value={l.roomTypeCode} onChange={(e) => setLine(i, { roomTypeCode: e.target.value, roomId: '' })}>
                       {(types.data ?? []).map((x) => <option key={x.code} value={x.code}>{x.code} · {x.name}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Room number" hint={freeRooms[l.roomTypeCode] && !freeRooms[l.roomTypeCode].length ? 'No room of this type is free' : undefined}>
+                    <select value={l.roomId ?? ''} onChange={(e) => setLine(i, { roomId: e.target.value })} disabled={status === 'enquiry'}>
+                      <option value="">Any free room</option>
+                      {(freeRooms[l.roomTypeCode] ?? [])
+                        .filter((r) => r.id === l.roomId || !lines.some((x, j) => j !== i && x.roomId === r.id))
+                        .map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.number}{r.floor ? ` · floor ${r.floor}` : ''}{['clean', 'inspected'].includes(r.hkStatus) ? '' : ` · ${label(r.hkStatus)}`}
+                          </option>
+                        ))}
                     </select>
                   </Field>
                   <Field label="Rate plan">
@@ -337,7 +412,7 @@ export function NewReservationPage({ params }: { params: Record<string, string> 
               </div>
             );
           })}
-          <button type="button" className="ys-btn ghost" onClick={() => setLines([...lines, { ...lines[lines.length - 1], override: '', quote: null }])}>+ Add a room</button>
+          <button type="button" className="ys-btn ghost" onClick={() => setLines([...lines, { ...lines[lines.length - 1], override: '', roomId: '', quote: null }])}>+ Add a room</button>
         </fieldset>
 
         {anyOverride && (
@@ -383,6 +458,7 @@ interface DetailStay {
   folioStatus: string;
   departureTime: string | null;
   registrationAcknowledgedAt: string | null;
+  autoPostRoomCharges: boolean;
   cancelReason: string | null;
   nights: Array<{ date: string; amount: string; seasonName: string; isOverride: boolean }>;
   total: string;
@@ -533,8 +609,13 @@ export function ReservationDetailPage({ id }: { id: string }) {
             </tbody>
           </table>
           <p className="ys-muted">Folio balance {kes(s.balance?.balance)}{Number(s.balance?.paymentsPending ?? 0) > 0 ? ` · ${kes(s.balance.paymentsPending)} pending` : ''}</p>
+          {['confirmed', 'checked_in'].includes(s.status) && (
+            <StayCreditPanel stayId={s.id} autoPost={s.autoPostRoomCharges} onChanged={reload} />
+          )}
         </section>
       ))}
+
+      <EmailsSection reservationId={data.id} bookerEmail={data.booker.email} />
 
       {data.amendments.length > 0 && (
         <section className="ys-section">

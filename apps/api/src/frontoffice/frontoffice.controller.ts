@@ -1,6 +1,10 @@
-import { Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Header, Headers, HttpCode, Logger, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import {
   BOOKING_SOURCES,
+  GUEST_FIELD_REQUIREMENTS,
+  GUEST_RULE_FIELDS,
+  isCountryCode,
+  KRA_PIN_PATTERN,
   GUEST_REQUEST_CATEGORIES,
   GUEST_REQUEST_STATUSES,
   HK_STATUSES,
@@ -8,12 +12,15 @@ import {
   nightsBetween,
   PAYMENT_TENDERS,
   STAY_STATUSES,
+  hasPermission,
 } from '@hotel/shared';
 import { z } from 'zod';
 import { CurrentProperty, PropertyScoped, RequirePermission } from '../auth/decorators';
 import { ZodPipe } from '../common/zod.pipe';
+import { requestContext } from '../db/request-context';
 import { Idempotent } from '../idempotency/idempotency';
 import { Amount, ApprovalInput, CurrentPropertyT, IsoDate, Quantity, Reason, Time } from './common';
+import { EmailService } from './email.service';
 import { FoliosService } from './folios.service';
 import { FrontDeskService } from './frontdesk.service';
 import { GuestsService } from './guests.service';
@@ -25,13 +32,22 @@ import { RoomsService } from './rooms.service';
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
-const Country = z.string().regex(/^[A-Za-z]{2}$/, 'ISO country code, e.g. KE');
+const Country = z
+  .string()
+  .regex(/^[A-Za-z]{2}$/, 'ISO country code, e.g. KE')
+  .refine((c) => isCountryCode(c), 'Unknown country code');
+const KraPin = z
+  .string()
+  .trim()
+  .transform((v) => v.toUpperCase())
+  .refine((v) => KRA_PIN_PATTERN.test(v), 'KRA PIN looks like A012345678Z: a letter, nine digits and a letter');
 const GuestSchema = z.object({
   firstName: z.string().trim().min(1).max(80),
   lastName: z.string().trim().min(1).max(80),
   email: z.string().email().nullish(),
   phone: z.string().regex(/^\+?[0-9 ]{7,20}$/).nullish(),
   nationality: Country.nullish(),
+  kraPin: KraPin.nullish(),
   dateOfBirth: IsoDate.nullish(),
   address: z.string().max(300).nullish(),
   companyId: z.string().uuid().nullish(),
@@ -179,8 +195,24 @@ const Policy = z
     earlyCheckInFee: Amount,
     lateCheckOutFee: Amount,
     registrationTerms: z.string().max(5000),
+    hotelPolicies: z.string().max(10000),
   })
   .partial();
+const CompanySchema = z.object({
+  kind: z.enum(['company', 'agent']),
+  name: z.string().trim().min(2).max(120),
+  kraPin: KraPin.nullish(),
+  contactName: z.string().trim().max(120).nullish(),
+  contactPhone: z.string().regex(/^\+?[0-9 ]{7,20}$/).nullish(),
+  contactEmail: z.string().email().nullish(),
+  creditDays: z.number().int().min(0).max(365).nullish(),
+  notes: z.string().max(1000).nullish(),
+  isActive: z.boolean().optional(),
+});
+const FieldRules = z.object(Object.fromEntries(GUEST_RULE_FIELDS.map((f) => [f, z.enum(GUEST_FIELD_REQUIREMENTS).optional()]))).strict();
+const DashboardQuery = z.object({ from: IsoDate, to: IsoDate });
+const AutoPosting = z.object({ enabled: z.boolean(), reason: Reason });
+const SendEmail = z.object({ to: z.string().email().nullish() });
 const RequestSchema = z.object({
   stayId: z.string().uuid().nullish(),
   roomId: z.string().uuid().nullish(),
@@ -292,7 +324,27 @@ export class RoomsController {
 @Controller('properties/:propertyCode/reservations')
 @PropertyScoped()
 export class ReservationsController {
-  constructor(private readonly reservations: ReservationsService) {}
+  private readonly log = new Logger('Reservations');
+
+  constructor(
+    private readonly reservations: ReservationsService,
+    private readonly emails: EmailService,
+  ) {}
+
+  /**
+   * Queues the booking confirmation once per reservation when it is confirmed
+   * and the booker has an email address. An email problem never fails the
+   * booking; the reservation screen shows the email's status and can resend.
+   */
+  private async autoConfirmation<T extends { id: string; stays: Array<{ status: string }> }>(propertyId: string, r: T): Promise<T> {
+    if (!r.stays.some((s) => s.status === 'confirmed')) return r;
+    try {
+      await this.emails.queueBookingConfirmation(propertyId, r.id, `booking-confirmation:${r.id}:confirmed`);
+    } catch (err) {
+      this.log.warn(`Booking confirmation for ${r.id} not queued: ${(err as Error).message}`);
+    }
+    return r;
+  }
 
   @Get()
   @RequirePermission('reservation.read')
@@ -303,8 +355,8 @@ export class ReservationsController {
   @Post()
   @RequirePermission('reservation.manage')
   @Idempotent()
-  create(@CurrentProperty() p: CurrentPropertyT, @Body(new ZodPipe(CreateReservation)) b: Body<typeof CreateReservation>) {
-    return this.reservations.create(p, b);
+  async create(@CurrentProperty() p: CurrentPropertyT, @Body(new ZodPipe(CreateReservation)) b: Body<typeof CreateReservation>) {
+    return this.autoConfirmation(p.id, (await this.reservations.create(p, b)) as never);
   }
 
   @Get(':id')
@@ -317,8 +369,8 @@ export class ReservationsController {
   @HttpCode(200)
   @RequirePermission('reservation.manage')
   @Idempotent()
-  confirm(@CurrentProperty() p: CurrentPropertyT, @Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(Lifecycle)) b: Body<typeof Lifecycle>) {
-    return this.reservations.lifecycle(p.id, id, 'confirm', b);
+  async confirm(@CurrentProperty() p: CurrentPropertyT, @Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(Lifecycle)) b: Body<typeof Lifecycle>) {
+    return this.autoConfirmation(p.id, (await this.reservations.lifecycle(p.id, id, 'confirm', b)) as never);
   }
 
   @Post(':id/hold')
@@ -351,6 +403,27 @@ export class ReservationsController {
   proforma(@CurrentProperty() p: CurrentPropertyT, @Param('id', ParseUUIDPipe) id: string) {
     return this.reservations.proforma(p.id, id);
   }
+
+  @Get(':id/emails')
+  @RequirePermission('reservation.read')
+  emailsFor(@CurrentProperty() p: CurrentPropertyT, @Param('id', ParseUUIDPipe) id: string) {
+    return this.emails.list(p.id, id);
+  }
+
+  /** Sends (or resends) the booking confirmation with the current pro forma, receipts and policies. */
+  @Post(':id/emails/confirmation')
+  @RequirePermission('reservation.manage')
+  @Idempotent()
+  async sendConfirmation(
+    @CurrentProperty() p: CurrentPropertyT,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Headers('idempotency-key') key: string,
+    @Body(new ZodPipe(SendEmail)) b: Body<typeof SendEmail>,
+  ) {
+    const msg = await this.emails.queueBookingConfirmation(p.id, id, `booking-confirmation:${id}:${key}`, b.to);
+    if (!msg) throw new BadRequestException('The booker has no email address; enter one to send to');
+    return msg;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -362,6 +435,7 @@ export class FrontDeskController {
   constructor(
     private readonly desk: FrontDeskService,
     private readonly reservations: ReservationsService,
+    private readonly rooms: RoomsService,
   ) {}
 
   @Get('front-desk/dashboard')
@@ -376,6 +450,28 @@ export class FrontDeskController {
   @Idempotent()
   closeDay(@CurrentProperty() p: CurrentPropertyT, @Body(new ZodPipe(CloseDay)) b: Body<typeof CloseDay>) {
     return this.desk.closeDay(p.id, b.businessDate);
+  }
+
+  /** Room status dashboard: rooms, stays and blocks over an inclusive date range (max 366 days), plus prepaid-credit warnings. */
+  @Get('room-dashboard')
+  @RequirePermission('room.read')
+  async roomDashboard(@CurrentProperty() p: CurrentPropertyT, @Query(new ZodPipe(DashboardQuery)) qy: Body<typeof DashboardQuery>) {
+    const data = await this.rooms.dashboard(p.id, qy.from, qy.to);
+    const credit = hasPermission(requestContext.get()?.user?.roles ?? [], 'folio.read') ? await this.desk.creditStatus(p.id) : [];
+    return { ...data, businessDate: p.businessDate, credit };
+  }
+
+  @Get('front-desk/credit')
+  @RequirePermission('folio.read')
+  credit(@CurrentProperty() p: CurrentPropertyT) {
+    return this.desk.creditStatus(p.id);
+  }
+
+  @Post('stays/:stayId/auto-posting')
+  @HttpCode(200)
+  @RequirePermission('stay.auto_posting')
+  autoPosting(@CurrentProperty() p: CurrentPropertyT, @Param('stayId', ParseUUIDPipe) stayId: string, @Body(new ZodPipe(AutoPosting)) b: Body<typeof AutoPosting>) {
+    return this.desk.setAutoPosting(p.id, stayId, b.enabled, b.reason);
   }
 
   @Get('staff')
@@ -591,7 +687,31 @@ export class GuestsController {
 
   @Get('companies')
   @RequirePermission('guest.read')
-  companies(@Query('kind') kind?: string) {
-    return this.guests.companies(kind === 'company' || kind === 'agent' ? kind : undefined);
+  companies(@Query('kind') kind?: string, @Query('all') all?: string) {
+    return this.guests.companies(kind === 'company' || kind === 'agent' ? kind : undefined, all === 'true');
+  }
+
+  @Post('companies')
+  @RequirePermission('company.manage')
+  createCompany(@Body(new ZodPipe(CompanySchema)) b: Body<typeof CompanySchema>) {
+    return this.guests.createCompany(b);
+  }
+
+  @Patch('companies/:id')
+  @RequirePermission('company.manage')
+  updateCompany(@Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(CompanySchema.omit({ kind: true }).partial())) b: Partial<Body<typeof CompanySchema>>) {
+    return this.guests.updateCompany(id, b);
+  }
+
+  @Get('guest-field-rules')
+  @RequirePermission('guest.read')
+  fieldRules() {
+    return this.guests.fieldRules();
+  }
+
+  @Put('guest-field-rules')
+  @RequirePermission('guest.configure')
+  updateFieldRules(@Body(new ZodPipe(FieldRules)) b: Body<typeof FieldRules>) {
+    return this.guests.updateFieldRules(b);
   }
 }
