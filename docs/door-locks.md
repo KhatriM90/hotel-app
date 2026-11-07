@@ -37,7 +37,7 @@ Reception browser ──► YeaStay API (cloud) ◄── outbound HTTPS ── 
 
 1. **Supplier codes.** Send the supplier the lock software's database file `HData.mdb` (default `D:\HUNELOCK\Data\`). They give back the **SystemCode** and **HotelCode** for that property.
 2. **Door locks page** (managers): enter both codes, the encoder's **COM port** (Device Manager > Ports (COM & LPT) on the encoder PC) and the grace minutes.
-3. **Room lock addresses:** each door's 11-digit address from the Room page of the lock software: `01` + building (2) + floor (2) + room (3) + door (2), for example `01010200600`. Type them in, or paste lines of `room address`.
+3. **Room lock addresses:** each door's 11-digit address from the Room page of the lock software: `01` + building (2) + floor (2) + room (3) + door (2), for example `01010200600`. Type them in, or paste lines of `room address`. K1's 17 addresses (rooms 108-122, 124 and 125, from its `HData.mdb`) are loaded already by migration 0019. Rooms 123 and 126-129 have no entry in the lock software yet.
 4. Tick **Make key cards from YeaStay** and save.
 5. **Pair encoder PC.** The token is shown once, as the contents of `appsettings.json` for the bridge.
 

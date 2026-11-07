@@ -37,7 +37,7 @@ It prints one line per scenario (✓ or ✗ with the reason) and a summary. A sc
 - **K1 Reception Shop, Small World Swimming and Kahama Swimming Pool are closed for today** (they show the Z report). They can trade again once the property's business day is closed.
 - **Open cash shifts:** `k1.waiter` at Cowgirl Bar, `sw.waiter` at Small World Main Bar, `km.waiter` at Kahama Cocktail Bar. Close them (Cash shift → Close) before closing those outlets' POS day.
 - **Closing a property's business day** needs every outlet with sales closed first (POS day close), which means settling or voiding the open tables. That is how the day close is meant to work, so it is a good thing to demonstrate last.
-- K1 has only 13 rooms. The demo uses about eight of them for today, so leave K1 for walkthroughs and use Small World for free-form testing.
+- K1 has 22 rooms. The demo uses about eight of them for today, so leave K1 for walkthroughs and use Small World for free-form testing.
 
 ## Users
 

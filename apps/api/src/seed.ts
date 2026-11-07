@@ -4,7 +4,7 @@
  *   MIGRATION_DATABASE_URL=... SEED_PASSWORD='choose-a-dev-password' node dist/seed.js
  *
  * Creates demo users and test master data for reservations and front desk:
- * room types, rooms (K1 13, SW 42, KM 32), rate plans and prices, booking
+ * room types, rooms (K1 22, SW 42, KM 32), rate plans and prices, booking
  * policies, a corporate client, an agent and sample guests (seed-data.ts),
  * and POS menus, price lists, stations, tables and house accounts (seed-pos.ts).
  * Properties, SAP branch IDs, tax codes and the client's outlets come from
@@ -119,9 +119,9 @@ async function seedMasterData(client: Client, propertyId: Map<string, string>): 
       typeId.set(rt.code, rows[0].id);
       for (const room of rt.rooms) {
         await client.query(
-          `INSERT INTO rooms (property_id, room_type_id, number, floor, building) VALUES ($1, $2, $3, $4, $5)
+          `INSERT INTO rooms (property_id, room_type_id, number, floor, building, lock_address) VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (property_id, number) DO NOTHING`,
-          [pid, rows[0].id, room.number, room.floor, room.building],
+          [pid, rows[0].id, room.number, room.floor, room.building, room.lockAddress ?? null],
         );
       }
     }

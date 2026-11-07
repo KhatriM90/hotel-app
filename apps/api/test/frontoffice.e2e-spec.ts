@@ -64,8 +64,8 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
       }
     });
 
-    it('seeds 13 rooms at K1, 42 at Small World and 32 at Kahama', async () => {
-      for (const [code, n] of [['K1', 13], ['SW', 42], ['KM', 32]] as const) {
+    it('seeds 22 rooms at K1, 42 at Small World and 32 at Kahama', async () => {
+      for (const [code, n] of [['K1', 22], ['SW', 42], ['KM', 32]] as const) {
         const res = await api('owner').get(`/api/properties/${code}/rooms`).expect(200);
         expect(res.body).toHaveLength(n);
         const types = await api('owner').get(`/api/properties/${code}/room-types`).expect(200);
@@ -103,7 +103,7 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
       expect(stay.number).toMatch(/^K1-ST-\d{6}$/);
       expect(stay.folioNumber).toMatch(/^K1-FO-\d{6}$/);
       expect(stay.status).toBe('confirmed');
-      expect(stay.roomNumber).toMatch(/^20[1-4]$/);
+      expect(stay.roomNumber).toMatch(/^12[0-7]$/);
       expect(stay.nights).toHaveLength(2);
       // K1 deposit policy: first night (RES-07)
       expect(res.body.deposit.required).toBe(stay.nights[0].amount);
@@ -175,7 +175,7 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
 
     it('many simultaneous requests for one specific room create exactly one booking', async () => {
       const arrival = addDays(await bd(), 70);
-      const room = await roomId('103');
+      const room = await roomId('110');
       const results = await Promise.all(
         Array.from({ length: 6 }, (_, i) =>
           book(i % 2 ? 'k1.manager' : 'k1.reception', { arrival, departure: addDays(arrival, 2), rooms: [{ roomTypeCode: 'STD', ratePlanCode: 'RACK', adults: 1, roomId: room }] }),
@@ -197,11 +197,11 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
 
     it('a maintenance block takes the room out of availability (RES-01)', async () => {
       const arrival = addDays(await bd(), 80);
-      const room = await roomId('104');
+      const room = await roomId('111');
       const block = await api('k1.reception').post(`${K1}/rooms/${room}/blocks`, { from: arrival, to: addDays(arrival, 2), reason: 'Bathroom retiling' }).expect(201);
       await book('k1.reception', { arrival, departure: addDays(arrival, 1), rooms: [{ roomTypeCode: 'STD', ratePlanCode: 'RACK', adults: 1, roomId: room }] }).expect(409);
       const grid = await api('k1.reception').get(`${K1}/availability?from=${arrival}&days=3`).expect(200);
-      const row = grid.body.rooms.find((r: { number: string }) => r.number === '104');
+      const row = grid.body.rooms.find((r: { number: string }) => r.number === '111');
       expect(row.cells.map((c: { state: string }) => c.state)).toEqual(['blocked', 'blocked', 'free']);
       await api('k1.reception').post(`${K1}/blocks/${block.body.id}/release`).expect(200);
     });
@@ -339,8 +339,8 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
   describe('AT-05 room move', () => {
     it('moves a guest from 101 to 205; charges stay on the same stay; the next guest in 101 inherits none', async () => {
       const today = await bd();
-      const r101 = await roomId('101');
-      const r205 = await roomId('205');
+      const r101 = await roomId('108');
+      const r205 = await roomId('128');
       const owner = await ownerClient();
       try {
         await owner.query(`UPDATE rooms SET hk_status = 'clean' WHERE id = ANY($1)`, [[r101, r205]]);
@@ -349,20 +349,20 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
       }
       const res = await book('k1.reception', { arrival: today, departure: addDays(today, 3), rooms: [{ roomTypeCode: 'STD', ratePlanCode: 'RACK', adults: 1, roomId: r101 }] }).expect(201);
       const stay = res.body.stays[0];
-      expect(stay.roomNumber).toBe('101');
+      expect(stay.roomNumber).toBe('108');
       await api('k1.reception').post(`${K1}/stays/${stay.id}/check-in`, { identity: identity(), roomChargeAllowed: true }).expect(200);
       await api('k1.reception').post(`${K1}/folios/${stay.folioId}/charges`, { chargeCode: 'BEVERAGE', unitPrice: '450.00', quantity: '2', outletCode: 'K1-COCKTAIL' }).expect(201);
       await api('k1.reception').post(`${K1}/folios/${stay.folioId}/charges`, { chargeCode: 'LAUNDRY', unitPrice: '600.00', outletCode: 'K1-LAUNDRY' }).expect(201);
 
       const moved = await api('k1.reception').post(`${K1}/stays/${stay.id}/move`, { toRoomId: r205, reason: 'Upgrade: air conditioning fault in 101' }).expect(200);
-      expect(moved.body).toMatchObject({ stayNumber: stay.number, fromRoom: '101', toRoom: '205' });
+      expect(moved.body).toMatchObject({ stayNumber: stay.number, fromRoom: '108', toRoom: '128' });
 
       const folio = await api('k1.reception').get(`${K1}/folios/${stay.folioId}`).expect(200);
-      expect(folio.body).toMatchObject({ number: stay.folioNumber, stayNumber: stay.number, roomNumber: '205' });
+      expect(folio.body).toMatchObject({ number: stay.folioNumber, stayNumber: stay.number, roomNumber: '128' });
       expect(folio.body.charges).toHaveLength(2);
       expect(folio.body.balance.chargesTotal).toBe('1500.00');
       const history = await api('k1.reception').get(`${K1}/stays/${stay.id}/moves`).expect(200);
-      expect(history.body).toEqual([expect.objectContaining({ fromRoom: '101', toRoom: '205' })]);
+      expect(history.body).toEqual([expect.objectContaining({ fromRoom: '108', toRoom: '128' })]);
 
       // 101 was left dirty; housekeeping cleans it and a new guest takes it
       await api('k1.reception').patch(`${K1}/rooms/${r101}/hk-status`, { hkStatus: 'clean' }).expect(200);
@@ -383,11 +383,11 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
       const today = await bd();
       const owner = await ownerClient();
       try {
-        await owner.query(`UPDATE rooms SET hk_status = 'dirty' WHERE number = '106' AND property_id = (SELECT id FROM properties WHERE code = 'K1')`);
+        await owner.query(`UPDATE rooms SET hk_status = 'dirty' WHERE number = '113' AND property_id = (SELECT id FROM properties WHERE code = 'K1')`);
       } finally {
         await owner.end();
       }
-      const res = await book('k1.reception', { arrival: today, departure: addDays(today, 2), rooms: [{ roomTypeCode: 'STD', ratePlanCode: 'RACK', adults: 2, roomId: await roomId('106') }] }).expect(201);
+      const res = await book('k1.reception', { arrival: today, departure: addDays(today, 2), rooms: [{ roomTypeCode: 'STD', ratePlanCode: 'RACK', adults: 2, roomId: await roomId('113') }] }).expect(201);
       stay = res.body.stays[0];
     });
 
@@ -402,7 +402,7 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
     });
 
     it('checks in to another ready room with occupants, an early check-in fee and a signed registration card', async () => {
-      const r107 = await roomId('107');
+      const r107 = await roomId('114');
       const owner = await ownerClient();
       try {
         await owner.query(`UPDATE rooms SET hk_status = 'inspected' WHERE id = $1`, [r107]);
@@ -421,7 +421,7 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
         })
         .expect(200);
       const s = res.body.stays[0];
-      expect(s).toMatchObject({ status: 'checked_in', roomNumber: '107', roomChargeAllowed: true, creditLimit: '2000.00' });
+      expect(s).toMatchObject({ status: 'checked_in', roomNumber: '114', roomChargeAllowed: true, creditLimit: '2000.00' });
       expect(s.occupants).toHaveLength(2);
       expect(s.balance.chargesTotal).toBe('2000.00'); // K1 early check-in fee
       const card = await api('k1.reception').get(`${K1}/stays/${stay.id}/registration-card`).expect(200);
@@ -464,13 +464,13 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
       await api('k1.reception').patch(`${K1}/guest-requests/${r.body.id}`, { status: 'done', note: 'Delivered' }).expect(200);
       const list = await api('k1.reception').get(`${K1}/guest-requests`).expect(200);
       const item = list.body.find((x: { id: string }) => x.id === r.body.id);
-      expect(item).toMatchObject({ status: 'done', owner: 'K1 manager', roomNumber: '107' });
+      expect(item).toMatchObject({ status: 'done', owner: 'K1 manager', roomNumber: '114' });
       expect(item.notes.map((n: { note: string }) => n.note)).toEqual(['Housekeeping on the way', 'Delivered']);
     });
 
     it('the dashboard shows in-house guests, arrivals and room readiness (FD-01)', async () => {
       const res = await api('k1.reception').get(`${K1}/front-desk/dashboard`).expect(200);
-      expect(res.body.counts.rooms).toBe(13);
+      expect(res.body.counts.rooms).toBe(22);
       expect(res.body.inHouse.map((s: { number: string }) => s.number)).toContain(stay.number);
       expect(res.body.outstandingBalances.map((s: { number: string }) => s.number)).toContain(stay.number);
       expect(res.body.roomReadiness.length).toBeGreaterThan(0);
@@ -639,7 +639,7 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
       const acme = companies.body.find((c: { name: string }) => c.name === 'Acme Logistics Ltd');
       const owner = await ownerClient();
       try {
-        await owner.query(`UPDATE rooms SET hk_status = 'clean' WHERE number = '102' AND property_id = (SELECT id FROM properties WHERE code = 'K1')`);
+        await owner.query(`UPDATE rooms SET hk_status = 'clean' WHERE number = '109' AND property_id = (SELECT id FROM properties WHERE code = 'K1')`);
       } finally {
         await owner.end();
       }
@@ -647,7 +647,7 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
       // 1. Book two nights at the Acme corporate rate (5,500 every night).
       const res = await book('k1.reception', {
         source: 'email', companyId: acme.id, arrival: today, departure: addDays(today, 2),
-        rooms: [{ roomTypeCode: 'STD', ratePlanCode: 'CORPACME', adults: 1, roomId: await roomId('102') }],
+        rooms: [{ roomTypeCode: 'STD', ratePlanCode: 'CORPACME', adults: 1, roomId: await roomId('109') }],
       }).expect(201);
       const stay = res.body.stays[0];
       expect(stay.total).toBe('11000.00');
@@ -702,7 +702,7 @@ describe('Reservations, front desk and folio (RES, FD, BIL-01/06/09)', () => {
 
       // Room is dirty for housekeeping, the stay is frozen.
       const rooms = await api('k1.reception').get(`${K1}/rooms`).expect(200);
-      expect(rooms.body.find((r: { number: string }) => r.number === '102').hkStatus).toBe('dirty');
+      expect(rooms.body.find((r: { number: string }) => r.number === '109').hkStatus).toBe('dirty');
       const o = await ownerClient();
       try {
         await expect(o.query(`UPDATE folios SET number = 'X' WHERE id = $1`, [stay.folioId])).rejects.toThrow();
