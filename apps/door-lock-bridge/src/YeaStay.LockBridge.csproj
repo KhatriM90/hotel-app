@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    YeaStay door-lock bridge (INT-09). Runs on the reception PC that has the
+    TEMIC20 card encoder. HUNERF.dll is 32-bit, so the Windows build is x86:
+      dotnet publish src -c Release -r win-x86 -p:PublishSingleFile=true -p:SelfContained=true
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>YeaStayLockBridge</AssemblyName>
+    <RootNamespace>YeaStay.LockBridge</RootNamespace>
+    <Version>0.1.0</Version>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x86'">
+    <PlatformTarget>x86</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="appsettings.example.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <InternalsVisibleTo Include="YeaStay.LockBridge.Tests" />
+  </ItemGroup>
+</Project>

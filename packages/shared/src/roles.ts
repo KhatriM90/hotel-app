@@ -64,6 +64,9 @@ export const PERMISSIONS = {
   'businessday.close': ['owner', 'admin', 'area_manager', 'manager'],
   // CFG-01: business-day cut-off per property and outlet, POS outlet settings.
   'businessday.configure': ['owner', 'admin', 'area_manager', 'manager'],
+  // Door locks (INT-09): reception encodes guest key cards; managers set up the lock codes, room addresses and encoder PC.
+  'keycard.issue': ['owner', 'area_manager', 'manager', 'receptionist'],
+  'doorlock.configure': ['owner', 'admin', 'area_manager', 'manager'],
 
   // Folio (BIL-01, BIL-06, BIL-09)
   'folio.read': ['owner', 'admin', 'area_manager', 'group_accounts', 'manager', 'receptionist', 'cashier', 'accountant'],

@@ -5,6 +5,7 @@ import { base, ErrorText, Field, kes, label, openPrintable, StatusBadge, useActi
 import { CompanyModal } from './Agents';
 import { contactBody, contactProblem, ContactFields, EMPTY_CONTACT, GuestContact, useGuestRules } from './GuestFields';
 import { EmailsSection, StayCreditPanel } from './StayCredit';
+import { KeyCardsPanel } from './KeyCards';
 import { AmendModal, CancelModal, CheckInModal, LateCheckoutModal, MoveModal, StayRef } from './StayActions';
 
 /** Reservations: list, new booking and the booking record (RES-02 to RES-08). */
@@ -612,6 +613,7 @@ export function ReservationDetailPage({ id }: { id: string }) {
           {['confirmed', 'checked_in'].includes(s.status) && (
             <StayCreditPanel stayId={s.id} autoPost={s.autoPostRoomCharges} onChanged={reload} />
           )}
+          {['checked_in', 'checked_out'].includes(s.status) && <KeyCardsPanel key={`${s.id}-${s.roomNumber}-${s.status}`} stayId={s.id} />}
         </section>
       ))}
 
@@ -648,7 +650,7 @@ export function ReservationDetailPage({ id }: { id: string }) {
         </section>
       )}
 
-      {dialog?.kind === 'check-in' && <CheckInModal stay={toRef(dialog.stay, id)} onClose={() => setDialog(null)} onDone={() => done('Checked in.')} />}
+      {dialog?.kind === 'check-in' && <CheckInModal stay={toRef(dialog.stay, id)} onClose={() => setDialog(null)} onDone={() => done('Checked in. Make the key cards under the stay.')} />}
       {dialog?.kind === 'move' && <MoveModal stay={toRef(dialog.stay, id)} onClose={() => setDialog(null)} onDone={() => done('Room changed.')} />}
       {dialog?.kind === 'late' && <LateCheckoutModal stay={toRef(dialog.stay, id)} onClose={() => setDialog(null)} onDone={() => done('Late check-out saved.')} />}
       {dialog?.kind === 'amend' && (

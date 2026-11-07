@@ -6,6 +6,7 @@ export const IS_PUBLIC = 'auth:public';
 export const PERMISSION = 'auth:permission';
 export const PROPERTY_PARAM = 'auth:propertyParam';
 export const WORKER_ONLY = 'auth:worker';
+export const BRIDGE_ONLY = 'auth:doorLockBridge';
 
 /** No authentication required. */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
@@ -22,6 +23,12 @@ export const PropertyScoped = (param = 'propertyCode') => SetMetadata(PROPERTY_P
 
 /** Only the HQ integration worker (bearer WORKER_TOKEN) may call this route. */
 export const WorkerOnly = () => SetMetadata(WORKER_ONLY, true);
+
+/**
+ * Only a paired door-lock bridge (INT-09) may call this route. Its bearer token
+ * names one property; the request is scoped to that property alone.
+ */
+export const BridgeOnly = () => SetMetadata(BRIDGE_ONLY, true);
 
 export const CurrentUser = createParamDecorator((_: unknown, _ctx: ExecutionContext) => requestContext.get()?.user);
 export const CurrentProperty = createParamDecorator((_: unknown, _ctx: ExecutionContext) => requestContext.get()?.property);

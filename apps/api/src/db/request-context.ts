@@ -25,6 +25,8 @@ export interface RequestContext {
   property?: { id: string; code: string; businessDate: string };
   /** Set for the HQ integration worker. */
   worker?: boolean;
+  /** Set for a paired door-lock bridge (INT-09); `property` is its property. */
+  bridge?: boolean;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();
