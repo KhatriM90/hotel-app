@@ -148,6 +148,7 @@ interface Settings {
   cardPass: string;
   comPort: number;
   cardGraceMinutes: number;
+  nextCardNo: number;
   bridge: { paired: boolean; pairedAt: string | null; lastSeenAt: string | null; online: boolean; bridgeId: string | null; version: string | null; mode: 'dll' | 'mock' | null };
 }
 
@@ -208,6 +209,7 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: (s: 
     cardPass: settings.cardPass,
     comPort: settings.comPort,
     cardGraceMinutes: settings.cardGraceMinutes,
+    nextCardNo: settings.nextCardNo,
   });
   const action = useAction<Settings>();
   const save = async (e: React.FormEvent) => {
@@ -236,6 +238,9 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: (s: 
         </Field>
         <Field label="Minutes after check-out time" hint="Cards stop working this long after the stay's check-out time">
           <input type="number" min={0} max={720} value={form.cardGraceMinutes} onChange={(e) => setForm({ ...form, cardGraceMinutes: Number(e.target.value) })} />
+        </Field>
+        <Field label="Next card number" hint="Start above the numbers the supplier's software has used; it can only go up">
+          <input type="number" min={settings.nextCardNo} max={16777215} value={form.nextCardNo} onChange={(e) => setForm({ ...form, nextCardNo: Number(e.target.value) })} />
         </Field>
       </div>
       <label className="ys-check">
