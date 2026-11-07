@@ -35,6 +35,7 @@ Status key: **Done** = satisfied for what exists today · **Partial** = foundati
 | BIL-04 | Partial | Idempotency and outbox status (pending/claimed/posted/failed/dead), retries with backoff. No postings exist yet. |
 | BIL-07 | Partial | Database guards in place; linked charge reversals done (see below). Refunds and credit notes not yet. |
 | BIL-09 | Done (this module) | See below. |
+| INT-09 | Partial | TEMIC20 (V20 RF) guest key cards via a bridge on each reception's encoder PC (`apps/door-lock-bridge`, HUNERF.dll): new card and copies at check-in, card for the new room after a move, expiry at check-out time plus grace, read card. Tested against a mock encoder; first real-lock test waits for the supplier's SystemCode/HotelCode. Erase at checkout waits for the supplier to document `CheckoutCard`/`ClearCard`. See [door-locks.md](door-locks.md). |
 | INT-07 | Partial | Cloud outbox + HQ pull worker (outbound only) + Service Layer client + mock. |
 | SAP-04 | Partial | A/R invoice mapping with branch, dimensions, UDFs; tax codes and item codes TBC from mapping workbook. |
 | SAP-05 | Partial | Incoming payment mapping skeleton; invoice allocation not yet. |
@@ -72,7 +73,7 @@ Migrations `0010`–`0012`; API in `apps/api/src/frontoffice`; reception screens
 | FD-02 | Done | Group-wide guest profiles with contacts, nationality, DOB, address, company, preferences, notes, marketing consent. Identity numbers masked everywhere; the full number needs `guest.identity` and every view is audited. Stay history is limited to the viewer's properties (see decisions). |
 | FD-03 | Done | Check-in requires a valid identity document, a ready room (or manager approval), records occupants, room-charge permission and credit limit, applies deposits and the early check-in fee. |
 | FD-04 | Done | Printable registration card with the property's terms, agreed rates and signature line; acknowledgement (paper, digital signature image, or staff-verified) stored on the stay. |
-| FD-05 | Done | Room move changes the allocation only; stay, folio, charges and payments stay put; `room_moves` keeps the history; the old room becomes dirty. AT-05 tested. *Key history needs a door-lock integration, which the brief does not specify.* |
+| FD-05 | Done | Room move changes the allocation only; stay, folio, charges and payments stay put; `room_moves` keeps the history; the old room becomes dirty. AT-05 tested. Keys history: `key_cards` stays on the stay through moves; old-room cards show as "Previous room" (INT-09, see [door-locks.md](door-locks.md)). |
 | FD-06 | Done | Early check-in and late check-out fees from policy, waivers with approval, revised departure time; extensions through amendment with availability checks. |
 | FD-07 | Done | Guest requests (maintenance, linen, wake-up, housekeeping, transport, other) with owner, priority, due time, status and handover notes. |
 | FD-08 | Partial | Folio preview and running statement; blocks while payments are pending; posts nights still due; settles by tenders or an approved company transfer; requires zero balance; issues the invoice; closes the folio and stay; marks the room dirty. Open POS checks now block checkout (BIL-11, POS PR). **SAP posting of the folio (SAP-04) and eTIMS submission (INT-02) are not done yet.** |
@@ -183,7 +184,7 @@ Loyalty reports (LOY19, LOY21, LOY22, CLUB07) are on the loyalty PR, not merged 
 
 ## Not yet satisfied (everything else)
 
-HK-02 onwards, MT-*, POS-14, 15, 16, 20, BIL-05, 08, 13–15, INV-*, RPT-01, RPT-05, SEC-05, SEC-07, SEC-08, OPS-01, OPS-06, INT-01, INT-03–06, INT-08–10, SAP-01, SAP-03, SAP-06–10, SAP-12, SAP-16–19, AT-06, AT-11, AT-12, AT-15 and SAP-AT01–03, 07–11, 13 are **not started**. SEC-03 admin MFA is still outstanding.
+HK-02 onwards, MT-*, POS-14, 15, 16, 20, BIL-05, 08, 13–15, INV-*, RPT-01, RPT-05, SEC-05, SEC-07, SEC-08, OPS-01, OPS-06, INT-01, INT-03–06, INT-08, INT-10, SAP-01, SAP-03, SAP-06–10, SAP-12, SAP-16–19, AT-06, AT-11, AT-12, AT-15 and SAP-AT01–03, 07–11, 13 are **not started**. SEC-03 admin MFA is still outstanding.
 
 ## Client data received (26 Oct 2026)
 

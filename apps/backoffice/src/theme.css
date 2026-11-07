@@ -298,3 +298,11 @@ table.ys-cal { border-collapse: collapse; font-size: 13px; min-width: 100%; }
   .rd-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rd-period { margin-left: 0; }
 }
+
+/* Door locks (INT-09) */
+.ys-badge.st-enabled { background: #e3f4ea; color: var(--ys-ok); }
+.ys-badge.st-disabled { background: #eef1f1; color: var(--ys-slate); }
+.ys-keycards { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--ys-teal-050); }
+.ys-keycards h3 { margin: 0; }
+.ys-keycards select { width: auto; }
+.ys-token pre { background: var(--ys-night); color: #fff; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 13px; }

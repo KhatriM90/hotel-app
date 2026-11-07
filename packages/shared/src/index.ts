@@ -7,3 +7,4 @@ export * from './pos';
 export * from './countries';
 export * from './guestfields';
 export * from './roomdashboard';
+export * from './doorlocks';

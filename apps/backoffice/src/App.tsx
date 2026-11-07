@@ -7,6 +7,7 @@ import { CalendarPage } from './frontdesk/Calendar';
 import { DashboardPage } from './frontdesk/Dashboard';
 import { FolioPage } from './frontdesk/Folio';
 import { GuestPage, GuestsPage } from './frontdesk/Guests';
+import { DoorLocksPage } from './frontdesk/KeyCards';
 import { RequestsPage } from './frontdesk/Requests';
 import { NewReservationPage, ReservationDetailPage, ReservationsPage } from './frontdesk/Reservations';
 import { RoomDashboardPage } from './frontdesk/RoomDashboard';
@@ -28,13 +29,13 @@ function BusinessDateBadge({ property }: { property: Property }) {
 
 type Page =
   | 'desk' | 'room-dashboard' | 'calendar' | 'reservations' | 'new-reservation' | 'reservation' | 'folio'
-  | 'guests' | 'guest' | 'agents' | 'requests' | 'rooms' | 'rates'
+  | 'guests' | 'guest' | 'agents' | 'requests' | 'rooms' | 'rates' | 'door-locks'
   | 'pos-days' | 'pos-sales' | 'pos-shifts' | 'pos-menu' | 'pos-settings'
   | 'reports' | 'report-flash' | 'report-hotel'
   | 'overview' | 'outlets' | 'integration';
 
 /** Main navigation; each entry shows only for users holding its permission (the API enforces the same, SEC-01). */
-const NAV: Array<[Page, string, Permission?]> = [
+const NAV: Array<[Page, string, (Permission | Permission[])?]> = [
   ['desk', 'Front desk', 'frontdesk.operate'],
   ['room-dashboard', 'Room dashboard', 'room.read'],
   ['calendar', 'Availability', 'reservation.read'],
@@ -44,6 +45,7 @@ const NAV: Array<[Page, string, Permission?]> = [
   ['requests', 'Guest requests', 'guest_request.manage'],
   ['rooms', 'Rooms', 'room.read'],
   ['rates', 'Rates and policy', 'rate.read'],
+  ['door-locks', 'Door locks', ['keycard.issue', 'doorlock.configure']],
   ['reports', 'Reports', 'report.read'],
   ['report-flash', 'Daily flash', 'report.read'],
   ['report-hotel', 'Room sales', 'report.read'],
@@ -229,7 +231,7 @@ export function App() {
   if (checking) return null;
   if (!me) return <Login onLogin={setMe} />;
 
-  const nav = NAV.filter(([, , perm]) => !perm || hasPermission(me.roles, perm));
+  const nav = NAV.filter(([, , perm]) => !perm || (Array.isArray(perm) ? perm : [perm]).some((p) => hasPermission(me.roles, p)));
   const { page, params } = route;
   const section: Page =
     page === 'new-reservation' || page === 'reservation' || page === 'folio' ? 'reservations' : page === 'guest' ? 'guests' : page;
@@ -286,6 +288,7 @@ export function App() {
               {page === 'requests' && <RequestsPage key={current} />}
               {page === 'rooms' && <RoomsPage key={current} />}
               {page === 'rates' && <RatesPage key={current} />}
+              {page === 'door-locks' && <DoorLocksPage key={current} />}
               {page === 'reports' && <ReportsPage key={current} />}
               {page === 'report-flash' && <FlashReportPage key={current} />}
               {page === 'report-hotel' && <HotelReportPage key={current} />}

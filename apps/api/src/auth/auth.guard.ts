@@ -15,7 +15,7 @@ import { APP_CONFIG, AppConfig } from '../config';
 import { DbService } from '../db/db.service';
 import { requestContext, SYSTEM_SCOPE } from '../db/request-context';
 import { AuthService } from './auth.service';
-import { IS_PUBLIC, PERMISSION, PROPERTY_PARAM, WORKER_ONLY } from './decorators';
+import { BRIDGE_ONLY, IS_PUBLIC, PERMISSION, PROPERTY_PARAM, WORKER_ONLY } from './decorators';
 
 function sha256(value: string): Buffer {
   return createHash('sha256').update(value).digest();
@@ -57,6 +57,25 @@ export class AuthGuard implements CanActivate {
       }
       store.worker = true;
       store.scope = SYSTEM_SCOPE;
+      return true;
+    }
+
+    if (this.meta<boolean>(BRIDGE_ONLY, ctx)) {
+      // Door-lock bridge tokens are random 256-bit values; only their SHA-256 is stored.
+      const { rows } = await this.db.tx(
+        (q) =>
+          q.query<{ id: string; code: string; business_date: string }>(
+            `SELECT p.id, p.code, p.current_business_date::text AS business_date
+               FROM door_lock_settings s JOIN properties p ON p.id = s.property_id
+              WHERE s.bridge_token_hash = $1 AND p.is_active`,
+            [sha256(token).toString('hex')],
+          ),
+        SYSTEM_SCOPE,
+      );
+      if (!rows[0]) throw new UnauthorizedException('Invalid door-lock bridge token');
+      store.bridge = true;
+      store.property = { id: rows[0].id, code: rows[0].code, businessDate: rows[0].business_date };
+      store.scope = { all: false, propertyIds: [rows[0].id] };
       return true;
     }
 
