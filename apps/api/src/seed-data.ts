@@ -1,8 +1,10 @@
 /**
  * Test master data for the three properties: room types, rooms, rate plans,
  * booking policies, a corporate client, an agent and a few guests.
- * Room counts are the real ones (K1 13, SW 42, KM 32); room numbers, types
- * and prices are realistic placeholders until the client sends theirs.
+ * Room counts are the real ones (K1 22, SW 42, KM 32). K1's room numbers and
+ * door lock addresses are real (7 Nov 2026); its room types, and all other
+ * room numbers, types and prices, are realistic placeholders until the client
+ * sends theirs.
  * All prices are KES per night, VAT (16%) and catering levy (2%) inclusive.
  */
 
@@ -15,7 +17,7 @@ export interface SeedRoomType {
   maxOccupancy: number;
   beds: string;
   amenities: string[];
-  rooms: Array<{ number: string; floor: string; building: string }>;
+  rooms: Array<{ number: string; floor: string; building: string; lockAddress?: string }>;
 }
 
 export interface SeedPrice {
@@ -63,6 +65,23 @@ function range(prefix: string, from: number, to: number, floor: string, building
   return Array.from({ length: to - from + 1 }, (_, i) => ({ number: `${prefix}${from + i}`, floor, building }));
 }
 
+/**
+ * K1's door lock addresses from the lock software at reception (HData.mdb,
+ * building "PSH"). Rooms 123 and 126-129 have no lock entry yet.
+ */
+const K1_LOCK_ADDRESSES: Record<string, string> = {
+  '108': '01010100100', '109': '01010100200', '110': '01010100300', '111': '01010100400',
+  '112': '01010100500', '113': '01010100600', '114': '01010100700', '115': '01010100800',
+  '116': '01010100900', '117': '01010101000', '118': '01010101100', '119': '01010101200',
+  '120': '01010101300', '121': '01010101400', '122': '01010101500', '124': '01010101700',
+  '125': '01010101800',
+};
+
+/** K1's real rooms (SAP items K1-AC0008 to K1-AC0029), on the placeholder types until the real ones are known. */
+function k1Rooms(from: number, to: number) {
+  return range('', from, to, '1', 'Main').map((r) => (K1_LOCK_ADDRESSES[r.number] ? { ...r, lockAddress: K1_LOCK_ADDRESSES[r.number] } : r));
+}
+
 const BASE_FROM = '2026-01-01';
 
 function base(roomType: string, weekday: string, weekend: string, extraAdult: string, child: string): SeedPrice {
@@ -97,23 +116,24 @@ export const SEED_GUESTS = [
 
 export const SEED_PROPERTIES: SeedProperty[] = [
   {
-    // K1 Klubhouse, Parklands: 13 rooms in one urban block.
+    // K1 Klubhouse, Parklands: 22 real rooms, 108-129 (Manish, 7 Nov 2026).
+    // Which room is which type is not known yet; STD/DLX/STE are placeholders.
     code: 'K1',
     roomTypes: [
       {
         code: 'STD', name: 'Standard Double', description: 'Queen bed, work desk, en-suite shower',
         baseOccupancy: 2, maxAdults: 2, maxOccupancy: 3, beds: '1 queen', amenities: ['Wi-Fi', 'TV', 'Shower', 'Desk'],
-        rooms: range('', 101, 107, '1', 'Main'),
+        rooms: k1Rooms(108, 119),
       },
       {
         code: 'DLX', name: 'Deluxe King', description: 'King bed, balcony, bathtub',
         baseOccupancy: 2, maxAdults: 3, maxOccupancy: 4, beds: '1 king', amenities: ['Wi-Fi', 'TV', 'Bathtub', 'Balcony', 'Minibar'],
-        rooms: range('', 201, 204, '2', 'Main'),
+        rooms: k1Rooms(120, 127),
       },
       {
         code: 'STE', name: 'Executive Suite', description: 'Separate lounge, king bed, city view',
         baseOccupancy: 2, maxAdults: 3, maxOccupancy: 4, beds: '1 king + sofa bed', amenities: ['Wi-Fi', 'TV', 'Bathtub', 'Lounge', 'Minibar', 'Coffee machine'],
-        rooms: range('', 205, 206, '2', 'Main'),
+        rooms: k1Rooms(128, 129),
       },
     ],
     ratePlans: [

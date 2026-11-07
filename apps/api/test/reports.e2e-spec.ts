@@ -71,7 +71,7 @@ describe('reports', () => {
       expect(t.closed).toBe(false);
       expect(t.occupiedRooms).toBe(0); // tonight is not posted until the day closes
       expect(y.occupiedRooms).toBeGreaterThan(0);
-      expect(y.availableRooms).toBeLessThanOrEqual(13);
+      expect(y.availableRooms).toBeLessThanOrEqual(22);
       expect(y.roomsSold).toBe(y.occupiedRooms - y.compRooms);
       // Ratios, recomputed from the parts.
       expect(Number(y.occupancy)).toBeCloseTo((y.occupiedRooms / y.availableRooms) * 100, 2);
