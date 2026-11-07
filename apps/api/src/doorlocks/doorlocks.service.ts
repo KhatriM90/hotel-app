@@ -23,6 +23,8 @@ export interface DoorLockSettings {
   cardPass: string;
   comPort: number;
   cardGraceMinutes: number;
+  /** Number the next card gets; start it above the numbers the supplier's software has used. */
+  nextCardNo: number;
   bridge: {
     paired: boolean;
     pairedAt: string | null;
@@ -112,6 +114,7 @@ export class DoorLocksService {
       cardPass: withCodes ? r.card_pass : '••••',
       comPort: r.com_port,
       cardGraceMinutes: r.card_grace_minutes,
+      nextCardNo: r.next_card_no,
       bridge: {
         paired: !!r.bridge_token_hash,
         pairedAt: r.bridge_paired_at,
@@ -130,7 +133,7 @@ export class DoorLocksService {
 
   async updateSettings(
     propertyId: string,
-    input: { enabled?: boolean; systemCode?: string | null; hotelCode?: string | null; cardPass?: string; comPort?: number; cardGraceMinutes?: number },
+    input: { enabled?: boolean; systemCode?: string | null; hotelCode?: string | null; cardPass?: string; comPort?: number; cardGraceMinutes?: number; nextCardNo?: number },
   ): Promise<DoorLockSettings> {
     return this.db.tx(async (q) => {
       const before = await this.settingsRow(q, propertyId, true);
@@ -141,21 +144,26 @@ export class DoorLocksService {
         card_pass: input.cardPass ?? before.card_pass,
         com_port: input.comPort ?? before.com_port,
         card_grace_minutes: input.cardGraceMinutes ?? before.card_grace_minutes,
+        next_card_no: input.nextCardNo ?? before.next_card_no,
       };
+      // Card numbers only move forward, so "whose card is this?" never matches two cards.
+      if (next.next_card_no < before.next_card_no) {
+        throw new BadRequestException(`Card numbers only go up; the next card is already ${before.next_card_no}`);
+      }
       if (next.enabled && (!next.system_code || !next.hotel_code)) {
         throw new BadRequestException('Enter the SystemCode and HotelCode from the lock supplier before switching key cards on');
       }
       await q.query(
         `UPDATE door_lock_settings SET enabled = $2, system_code = $3, hotel_code = $4, card_pass = $5, com_port = $6,
-                card_grace_minutes = $7, updated_by = $8 WHERE property_id = $1`,
-        [propertyId, next.enabled, next.system_code, next.hotel_code, next.card_pass, next.com_port, next.card_grace_minutes, this.actor()],
+                card_grace_minutes = $7, next_card_no = $9, updated_by = $8 WHERE property_id = $1`,
+        [propertyId, next.enabled, next.system_code, next.hotel_code, next.card_pass, next.com_port, next.card_grace_minutes, this.actor(), next.next_card_no],
       );
       // Codes are secrets of the lock system: the audit trail records that they changed, not their values.
       await this.audit.record({
         action: 'doorlock.settings', entityType: 'door_lock_settings', entityId: propertyId, propertyId,
-        previousValues: { enabled: before.enabled, comPort: before.com_port, cardGraceMinutes: before.card_grace_minutes },
+        previousValues: { enabled: before.enabled, comPort: before.com_port, cardGraceMinutes: before.card_grace_minutes, nextCardNo: before.next_card_no },
         newValues: {
-          enabled: next.enabled, comPort: next.com_port, cardGraceMinutes: next.card_grace_minutes,
+          enabled: next.enabled, comPort: next.com_port, cardGraceMinutes: next.card_grace_minutes, nextCardNo: next.next_card_no,
           systemCodeChanged: next.system_code !== before.system_code, hotelCodeChanged: next.hotel_code !== before.hotel_code,
           cardPassChanged: next.card_pass !== before.card_pass,
         },

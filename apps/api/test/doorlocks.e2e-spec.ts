@@ -89,10 +89,14 @@ describe('Door locks: TEMIC20 key cards (INT-09)', () => {
     const noCodes = await api('km.manager').put(`${KM}/door-locks/settings`, { enabled: true }).expect(400);
     expect(noCodes.body.message).toMatch(/SystemCode/);
     const set = await api('km.manager').put(`${KM}/door-locks/settings`, { systemCode: 'A1B2C3', hotelCode: '0042', comPort: 3, cardGraceMinutes: 15 }).expect(200);
-    expect(set.body).toMatchObject({ enabled: false, systemCode: 'A1B2C3', hotelCode: '0042', comPort: 3, cardPass: '82A094FFFFFF' });
+    expect(set.body).toMatchObject({ enabled: false, systemCode: 'A1B2C3', hotelCode: '0042', comPort: 3, cardPass: '82A094FFFFFF', nextCardNo: 1 });
     const seen = await api('km.reception').get(`${KM}/door-locks/settings`).expect(200);
     expect(seen.body).toMatchObject({ systemCode: '••••', hotelCode: '••••', comPort: 3 });
     await api('km.waiter').get(`${KM}/door-locks/settings`).expect(403);
+    const numbered = await api('km.manager').put(`${KM}/door-locks/settings`, { nextCardNo: 5000 }).expect(200);
+    expect(numbered.body.nextCardNo).toBe(5000);
+    const back = await api('km.manager').put(`${KM}/door-locks/settings`, { nextCardNo: 4999 }).expect(400);
+    expect(back.body.message).toMatch(/only go up/);
   });
 
   it('refuses a card while key cards are switched off', async () => {

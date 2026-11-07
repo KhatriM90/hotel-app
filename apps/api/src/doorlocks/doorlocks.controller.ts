@@ -17,6 +17,7 @@ const SettingsSchema = z
     cardPass: z.string().trim().toUpperCase().regex(/^[0-9A-F]{12}$/, '12 hex characters, default 82A094FFFFFF'),
     comPort: z.number().int().min(1).max(64),
     cardGraceMinutes: z.number().int().min(0).max(720),
+    nextCardNo: z.number().int().min(1).max(16777215),
   })
   .partial()
   .strict();

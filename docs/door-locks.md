@@ -21,6 +21,7 @@ Reception browser ──► YeaStay API (cloud) ◄── outbound HTTPS ── 
 | **New key card(s)** | A card with a **new room password** (`TerminateOld = 1`), plus extra copies if you ask for 2 to 4 | The first time it is used, earlier guests' cards for that room stop working |
 | **Extra card** | A copy with the same room password (`TerminateOld = 0`) | Cards already given out keep working |
 
+- **Next card number** (Door locks page) starts YeaStay's card numbers above those the supplier's software already used (K1 had reached about 3,358 by 7 Nov 2026). It can only go up.
 - Cards are valid from 5 minutes before they are made until the stay's check-out time on the departure date, plus a grace period (30 minutes by default, set per property). A late check-out (FD-06) moves the end time.
 - The room password comes from the supplier's `CompactCipherTime` formula, which counts in 4-minute steps. YeaStay never repeats or lowers a room's password, so two new cards made within 4 minutes still cancel each other.
 - If a new card fails, the copies queued with it are cancelled and the encoder's error number is shown.
