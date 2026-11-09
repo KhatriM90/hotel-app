@@ -29,7 +29,7 @@ Status key: **Done** = satisfied for what exists today · **Partial** = foundati
 | CFG-05 | Partial | See the reservations PR table below. |
 | SEC-01 | Done (data) | All named roles seeded, plus group roles. No user-management API yet. |
 | SEC-02 | Partial | Server-side permission matrix (`packages/shared/src/roles.ts`). Approvals for rate overrides, fee waivers, charge reversals, credit transfers and room-not-ready are done (see below). Discounts, refunds, comps, stock adjustments and reopening days not yet. |
-| SEC-03 | Partial | Server-side checks, scrypt passwords, JWT, deactivation effective immediately, HTTPS/HSTS via Caddy, secrets from env. **Admin MFA, token revocation/device logout and encryption at rest (EBS/RDS setting) are outstanding.** |
+| SEC-03 | Partial | Server-side checks, scrypt passwords, JWT, deactivation effective immediately, HTTPS/HSTS via Caddy, secrets from env. Shared POS tablets: PIN sign-in tied to a registered tablet, revoked with it, automatic sign-out (Kahama meeting fixes, below). **Admin MFA, general token revocation and encryption at rest (EBS/RDS setting) are outstanding.** |
 | SEC-04 | Partial | Append-only `audit_events` (actor, time, business date, record, previous/new values, reason, request id). Written for login, outlet creation, dead letters and replays. Restricted export and retention not yet. |
 | SEC-06 | Done (foundation) | Postgres row-level security on every property-scoped table; API runs as non-superuser `hotel_app`; property routes narrow scope to one property. |
 | BIL-04 | Partial | Idempotency and outbox status (pending/claimed/posted/failed/dead), retries with backoff. No postings exist yet. |
@@ -230,3 +230,18 @@ The client's change list and the Roomscape room dashboard prototype. How to try 
 | Approvals sent to managers (late checkout, cancellation, refunds) | Not started | Next PR: request queue with in-app and email notification. Today a manager signs off at the desk. |
 | Automatic day close at 07:59 | Not started | Waiting on Manish's decision: closing has been a manual manager action (3 Nov 2026). |
 | Hune door-lock cards | Not started | Needs the lock and encoder model and the Hune SDK from the client. |
+
+## Kahama POS meeting fixes (9 Nov 2026)
+
+From the minutes of Kahama Mombasa's service team (waiters, supervisors). Scope agreed with Manish Khatri on 9 Nov 2026: the software fixes first, the print bridge and TIMS once the printer and TIMS device models are known. How to try them: [how-to-test-pos.md](how-to-test-pos.md), sections 17 to 19.
+
+| Meeting item | Status | Where |
+|---|---|---|
+| 2.1 Slow POS, repeated taps post items twice | Done (tablet) | One action at a time on the check screen: Send, Pay and every other check action lock until the server answers (spinner), so repeated taps are ignored. Items already went to a local basket at once, and every order carries an idempotency key. A peak-hour load test is still to do. |
+| 2.2 Waiters reprint bills without limit | Done | `pos_bill_prints` (append-only): every bill and receipt print with who, which tablet, total and what the bill held. A print after the bill changed is free and says UPDATED BILL; a copy of an unchanged bill, and any receipt copy, needs a reason and a manager (`approve.bill_reprint`, stored in `approvals`) and says REPRINT #n. `POST /pos/checks/:id/print` replaces the old GET. Back office **Bill reprints** report (`GET /pos/reports/bill-reprints`). |
+| 2.3 The next person ends up working as the previous user | Done | Registered tablets (`pos_devices`, token hashed) with PIN sign-in by name (`POST /auth/pin-login`); PINs are scrypt-hashed, 4–6 digits, no repeats or runs, locked for 5 min after 5 wrong tries; a PIN session names its tablet, works only at its property and ends when the tablet is unregistered. Each tablet signs out after its idle time (default 2 min) and optionally after every Send or finished payment; signing out reloads the app so nothing of the previous user remains. Offline orders replay under the waiter who took them. Back office **Tablets and PINs** (`pos.device.manage`). |
+| 2.4 Kitchen tickets fail to print, no warning | Not started | Needs the print bridge (INT-04) and the printer models at Kahama. |
+| 2.5 ETR / KRA PIN receipts don't print automatically | Not started | Needs the TIMS integration (INT-02) and Kahama's TIMS device model. |
+| 2.6 Deactivate items when stock runs out, allowing for store transfers | Not started | Today: manual 86 and optional daily counts (POS-12). Proposal: availability from the outlet's SAP warehouse stock (INV-02, INV-08). |
+| 2.7 IT support on night shifts | Not software | Staffing. |
+

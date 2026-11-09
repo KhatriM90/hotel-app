@@ -9,7 +9,9 @@ import { Idempotent } from '../idempotency/idempotency';
 import { PosChecksService } from './checks.service';
 import { PosDaysService } from './days.service';
 import { PosMenuService } from './menu.service';
-import { renderCheck, renderDayReport, renderTicket } from './render';
+import { renderDayReport, renderTicket } from './render';
+import { PosBillPrintsService } from './bill-prints.service';
+import { PosDevicesService } from './devices.service';
 import { PosReportsService } from './reports.service';
 import { PosSettingsService } from './settings.service';
 import { PosSettlementService } from './settlement.service';
@@ -86,6 +88,7 @@ const RoomCharge = z.object({
 const HouseAccountCharge = z.object({ houseAccountCode: Code, reason: Reason, approval: ApprovalInput });
 const Refund = z.object({ paymentId: Uuid, amount: Amount, reason: Reason, reference: z.string().trim().max(60).nullish(), approval: ApprovalInput });
 const Reprint = z.object({ reason: Reason });
+const PrintBill = z.object({ reason: Reason.optional(), approval: ApprovalInput });
 const TicketStatus = z.object({ status: z.enum(['preparing', 'ready', 'done']) });
 const CloseDay = z.object({ businessDate: IsoDate });
 const OpenShift = z.object({ outletCode: Code, openingFloat: Amount, handoverFromId: Uuid.nullish() });
@@ -132,6 +135,11 @@ const OutletSettings = z.object({
   routes: z.object({ kitchen: Code.nullish(), bar: Code.nullish() }).optional(),
 });
 const SalesQuery = z.object({ from: IsoDate, to: IsoDate, outlet: Code.optional() });
+const DeviceSettings = z.object({
+  idleSignoutSeconds: z.number().int().min(30).max(1800).optional(),
+  signoutAfterSend: z.boolean().optional(),
+});
+const RegisterDevice = DeviceSettings.extend({ name: z.string().trim().min(2).max(60) });
 
 // ---------------------------------------------------------------------------
 // Floor: outlets, menus, checks and orders (POS-01 … POS-08, POS-11, POS-12, POS-17)
@@ -144,7 +152,7 @@ export class PosController {
     private readonly menu: PosMenuService,
     private readonly checks: PosChecksService,
     private readonly settlement: PosSettlementService,
-    private readonly folios: FoliosService,
+    private readonly bills: PosBillPrintsService,
   ) {}
 
   @Get('outlets')
@@ -185,12 +193,17 @@ export class PosController {
     return this.checks.events(p.id, id);
   }
 
-  @Get('checks/:checkId/print')
+  /**
+   * Prints the guest bill (open check) or receipt (closed). Every print is
+   * recorded; a copy of an unchanged bill, or any receipt copy, needs a reason
+   * and a manager's approval (error reprint_restricted, then approval_required).
+   */
+  @Post('checks/:checkId/print')
+  @HttpCode(200)
   @RequirePermission('pos.use')
-  @Header('content-type', 'text/html; charset=utf-8')
-  @Header('cache-control', 'no-store')
-  async print(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string) {
-    return renderCheck(await this.checks.get(p.id, id), await this.folios.headerFor(p.id));
+  @Idempotent()
+  printBill(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string, @Body(new ZodPipe(PrintBill)) b: Body<typeof PrintBill>) {
+    return this.bills.print(p.id, id, b);
   }
 
   @Post('checks/:checkId/lines')
@@ -576,5 +589,65 @@ export class PosMenuController {
   @Idempotent()
   copy(@Body(new ZodPipe(CopyOutlet)) b: Body<typeof CopyOutlet>) {
     return this.menu.copyOutlet(b.fromOutletCode, b.toOutletCode);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared tablets, staff PINs and bill reprints (Kahama meeting, 9 Nov 2026)
+// ---------------------------------------------------------------------------
+@Controller('properties/:propertyCode/pos')
+@PropertyScoped()
+export class PosDevicesController {
+  constructor(
+    private readonly devices: PosDevicesService,
+    private readonly bills: PosBillPrintsService,
+  ) {}
+
+  @Get('devices')
+  @RequirePermission('pos.device.manage')
+  list(@CurrentProperty() p: CurrentPropertyT) {
+    return this.devices.list(p.id);
+  }
+
+  /** Registers the calling tablet; the answer carries its device token once. */
+  @Post('devices')
+  @RequirePermission('pos.device.manage')
+  @Idempotent()
+  register(@CurrentProperty() p: CurrentPropertyT, @Body(new ZodPipe(RegisterDevice)) b: Body<typeof RegisterDevice>) {
+    return this.devices.register(p.id, b);
+  }
+
+  @Patch('devices/:deviceId')
+  @RequirePermission('pos.device.manage')
+  update(@CurrentProperty() p: CurrentPropertyT, @Param('deviceId', ParseUUIDPipe) id: string, @Body(new ZodPipe(DeviceSettings)) b: Body<typeof DeviceSettings>) {
+    return this.devices.update(p.id, id, b);
+  }
+
+  @Post('devices/:deviceId/revoke')
+  @HttpCode(200)
+  @RequirePermission('pos.device.manage')
+  @Idempotent()
+  revoke(@CurrentProperty() p: CurrentPropertyT, @Param('deviceId', ParseUUIDPipe) id: string) {
+    return this.devices.revoke(p.id, id);
+  }
+
+  @Get('staff-pins')
+  @RequirePermission('pos.device.manage')
+  staff(@CurrentProperty() p: CurrentPropertyT) {
+    return this.devices.staff(p.id);
+  }
+
+  @Post('staff/:userId/clear-pin')
+  @HttpCode(200)
+  @RequirePermission('pos.device.manage')
+  @Idempotent()
+  clearPin(@CurrentProperty() p: CurrentPropertyT, @Param('userId', ParseUUIDPipe) userId: string) {
+    return this.devices.clearPin(p.id, userId);
+  }
+
+  @Get('reports/bill-reprints')
+  @RequirePermission('pos.report')
+  reprints(@CurrentProperty() p: CurrentPropertyT, @Query(new ZodPipe(SalesQuery)) query: Body<typeof SalesQuery>) {
+    return this.bills.reprints(p.id, query.from, query.to, query.outlet);
   }
 }

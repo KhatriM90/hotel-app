@@ -7,7 +7,7 @@
  * and room charges always need the server's answer.
  */
 import { api, ApiError, newKey, OfflineError } from './api';
-import { OfflineQueue } from './queue';
+import { OfflineQueue, type QueuedAction } from './queue';
 import { addMoney, confirmBox, esc, kes, modal, printHtml, showError, toast, withSignOff } from './ui';
 
 interface MenuRow {
@@ -118,7 +118,15 @@ export class WaiterApp {
     private readonly property: string,
     private readonly outletCode: string,
     private readonly onExit: () => void,
+    /**
+     * Called after an order is sent to the kitchen/bar and when a paid check is
+     * finished, so a shared tablet can sign the waiter out (Kahama meeting, 2.3).
+     */
+    private readonly afterSale: () => void = () => undefined,
   ) {}
+
+  /** True while a Send, Pay or other check action is waiting for the server. */
+  private busy = false;
 
   private get pos() {
     return `/properties/${this.property}/pos`;
@@ -172,10 +180,15 @@ export class WaiterApp {
     localStorage.setItem(LOCAL_CHECKS, JSON.stringify(all));
   }
 
+  /** Queues an action under the signed-in waiter, who stays its author when it is replayed. */
+  private enqueue(action: Omit<QueuedAction, 'id' | 'createdAt' | 'token' | 'userName'>): void {
+    this.queue.add({ ...action, token: api.session?.token, userName: api.session?.user.displayName });
+  }
+
   async flush(): Promise<void> {
     if (!this.queue.list().length) return;
     const res = await this.queue.flush((a) =>
-      api.request('POST', a.path, a.body, a.key).catch((err) => {
+      (a.token ? api.requestAs(a.token, 'POST', a.path, a.body, a.key) : api.request('POST', a.path, a.body, a.key)).catch((err) => {
         // Already sent by another device or a held order: nothing left to do.
         if (err instanceof ApiError && err.code === 'nothing_to_send') return null;
         throw err;
@@ -330,7 +343,7 @@ export class WaiterApp {
     } catch (err) {
       if (!(err instanceof OfflineError)) return showError(err);
       // Offline: keep the check on the device and send it later (OPS-05).
-      this.queue.add({ method: 'POST', path: `${this.pos}/outlets/${this.outletCode}/checks`, body: payload, key, label: 'Open check', checkId: id });
+      this.enqueue({ method: 'POST', path: `${this.pos}/outlets/${this.outletCode}/checks`, body: payload, key, label: 'Open check', checkId: id });
       const table = this.menu!.tables.find((t) => t.id === tableId);
       this.check = {
         id, number: 'Offline', status: 'open', serviceType: String(payload.serviceType), tableId: tableId ?? null, tableCode: table?.code ?? null,
@@ -467,7 +480,10 @@ export class WaiterApp {
     );
 
     const on = (sel: string, fn: (el: HTMLElement) => void) => this.root.querySelectorAll<HTMLElement>(sel).forEach((el) => el.addEventListener('click', () => fn(el)));
-    on('[data-act=back]', () => void this.showFloor());
+    on('[data-act=back]', () => {
+      const finished = c.status !== 'open';
+      void this.showFloor().then(() => finished && this.afterSale());
+    });
     on('[data-cat]', (el) => {
       this.category = el.dataset.cat!;
       this.search = '';
@@ -495,12 +511,28 @@ export class WaiterApp {
       this.queue.dismiss(el.dataset.dismiss!);
       this.renderCheck();
     });
-    on('[data-tender]', (el) => void this.pay(el.dataset.tender).catch(showError));
-    const act = (name: string, fn: () => Promise<unknown>) => on(`[data-act=${name}]`, () => void fn().catch(showError));
+    // One action at a time: while Send, Pay or any check action waits for the
+    // server, further taps are ignored, so a slow answer never doubles an order
+    // or a payment (Kahama meeting, 2.1).
+    const guarded = (el: HTMLElement, fn: () => Promise<unknown>) => {
+      if (this.busy) return;
+      this.busy = true;
+      this.root.classList.add('busy');
+      el.classList.add('working');
+      void fn()
+        .catch(showError)
+        .finally(() => {
+          this.busy = false;
+          this.root.classList.remove('busy');
+          el.classList.remove('working');
+        });
+    };
+    on('[data-tender]', (el) => guarded(el, () => this.pay(el.dataset.tender)));
+    const act = (name: string, fn: () => Promise<unknown>) => on(`[data-act=${name}]`, (el) => guarded(el, fn));
     act('send', () => this.submitBasket(true));
     act('hold', () => this.submitBasket(false));
     act('serve', () => this.serve());
-    act('bill', async () => printHtml(await api.html(`${this.pos}/checks/${c.id}/print`)));
+    act('bill', () => this.printBill());
     act('pay', () => this.pay());
     act('evenly', () => this.splitEvenly());
     act('room', () => this.roomCharge());
@@ -631,7 +663,7 @@ export class WaiterApp {
     }
     if (send) {
       if (offline) {
-        this.queue.add({ method: 'POST', path: `${this.pos}/checks/${c.id}/send`, body: {}, key: newKey('send'), label: 'Send to kitchen/bar', checkId: c.id });
+        this.enqueue({ method: 'POST', path: `${this.pos}/checks/${c.id}/send`, body: {}, key: newKey('send'), label: 'Send to kitchen/bar', checkId: c.id });
         for (const l of this.check!.lines) if (l.status === 'draft') l.status = 'sent';
         this.saveLocal(this.check!);
         toast('Offline: order saved; it goes to the kitchen and bar when the connection returns', 'info');
@@ -640,6 +672,9 @@ export class WaiterApp {
           const res = await api.post<Check & { tickets: Array<{ number: string; station: string | null }> }>(`${this.pos}/checks/${c.id}/send`);
           this.check = res;
           toast(res.tickets.length ? `Sent: ${res.tickets.map((t) => t.station ?? 'no printer').join(', ')}` : 'Sent', 'ok');
+          this.renderCheck();
+          this.afterSale();
+          return;
         } catch (err) {
           if (err instanceof ApiError && err.code === 'nothing_to_send') toast('Nothing new to send', 'info');
           else throw err;
@@ -652,7 +687,7 @@ export class WaiterApp {
   private queueLines(lines: Array<{ id: string; portionId: string; quantity: string; modifierOptionIds: string[]; notes: string | null }>) {
     const c = this.check!;
     // Liquor hours and stock are checked by the server when the queue is sent; a refusal shows on the check.
-    this.queue.add({ method: 'POST', path: `${this.pos}/checks/${c.id}/lines`, body: { lines, acknowledgeWarnings: true }, key: newKey('lines'), label: `${lines.length} item(s)`, checkId: c.id });
+    this.enqueue({ method: 'POST', path: `${this.pos}/checks/${c.id}/lines`, body: { lines, acknowledgeWarnings: true }, key: newKey('lines'), label: `${lines.length} item(s)`, checkId: c.id });
     for (const b of this.basket) {
       c.lines.push({
         id: b.id, name: b.row.portionName ? `${b.row.name} (${b.row.portionName})` : b.row.name, quantity: String(b.quantity),
@@ -725,6 +760,35 @@ export class WaiterApp {
       throw err;
     }
     this.renderCheck();
+  }
+
+  /**
+   * Guest bill or receipt (POS-10). The first print is free, and so is a print
+   * after the bill changed. A copy of an unchanged bill, or of a receipt, needs
+   * a reason and a manager's sign-off; every print is logged (Kahama meeting, 2.2).
+   */
+  private async printBill() {
+    const path = `${this.pos}/checks/${this.check!.id}/print`;
+    type Printed = { html: string; printNo: number; changed: boolean; kind: string };
+    let out: Printed;
+    try {
+      out = await api.post<Printed>(path, {});
+    } catch (err) {
+      if (!(err instanceof ApiError && err.code === 'reprint_restricted')) throw err;
+      const self = err.body.selfApprove === true;
+      const res = await modal(
+        err.body.kind === 'receipt' ? 'Receipt copy' : 'Bill reprint',
+        `<p>${esc(err.message)}</p>
+         <label>Reason<input name="reason" required minlength="3" maxlength="500" placeholder="e.g. guest lost the bill"></label>
+         ${self ? '' : `<label>Manager username<input name="username" autocomplete="off" required></label>
+         <label>Password<input name="password" type="password" autocomplete="off" required></label>`}`,
+        { submit: 'Print copy' },
+      );
+      if (!res) return;
+      out = await api.post<Printed>(path, { reason: res.reason, ...(self ? {} : { approval: { username: res.username, password: res.password } }) });
+    }
+    printHtml(out.html);
+    if (out.printNo > 1) toast(out.changed ? 'Updated bill printed' : 'Copy printed and logged', 'info');
   }
 
   /**

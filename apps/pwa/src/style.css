@@ -241,3 +241,27 @@ canvas.sig { width: 100%; height: 160px; border: 1px dashed var(--ink-dim); bord
   .bottom-nav button { min-width: 0; flex: 1; }
   .bottom-nav .spacer { display: none; }
 }
+
+/* Kahama meeting fixes (9 Nov 2026) --------------------------------------- */
+/* 2.1 One action at a time: while Send, Pay or another check action waits, the other buttons rest. */
+.busy [data-act], .busy [data-tender] { pointer-events: none; }
+.busy [data-act]:not(.working), .busy [data-tender]:not(.working) { opacity: .55; }
+button.working { position: relative; color: transparent !important; }
+button.working::after { content: ''; position: absolute; inset: 0; margin: auto; width: 22px; height: 22px; border-radius: 50%;
+  border: 3px solid currentColor; border-color: var(--ys-amber) transparent var(--ys-amber) transparent; animation: ys-spin .8s linear infinite; }
+@keyframes ys-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { button.working::after { animation: none; } }
+
+/* 2.3 PIN sign-in on shared tablets. */
+.who-name { color: var(--text); font-size: 18px; }
+.login.wide { max-width: 760px; }
+.staff-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.staff-tile { text-align: left; min-height: 88px; padding: 16px; border-radius: 16px; background: var(--surface-2); }
+.staff-tile strong { display: block; font-size: 19px; }
+.staff-tile span { color: var(--text-dim); font-size: 14px; }
+.pin-dots { text-align: center; font-size: 30px; letter-spacing: 10px; min-height: 44px; color: var(--ink); }
+.pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pin-pad button { min-height: 64px; font-size: 26px; font-weight: 600; background: #eef4f4; color: var(--ink); border-color: var(--paper-line); }
+.idle-banner { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 20; background: var(--ys-amber); color: var(--ys-night);
+  font-weight: 700; padding: 14px 22px; border-radius: 14px; box-shadow: 0 8px 24px rgb(0 0 0 / 40%); max-width: calc(100vw - 32px); }
+label.check { display: flex; gap: 10px; align-items: center; }

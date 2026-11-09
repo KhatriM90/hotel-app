@@ -19,6 +19,13 @@ export interface QueuedAction {
   checkId: string;
   createdAt: string;
   error?: string;
+  /**
+   * The signed-in user's token and name when the action was taken. The action
+   * replays under that user even if someone else has signed in since, so
+   * orders are never posted under the wrong waiter (Kahama meeting, 2.3).
+   */
+  token?: string;
+  userName?: string;
 }
 
 type Store = Pick<Storage, 'getItem' | 'setItem'>;

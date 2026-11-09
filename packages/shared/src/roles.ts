@@ -87,6 +87,8 @@ export const PERMISSIONS = {
   'pos.menu.manage': ['owner', 'admin', 'area_manager', 'manager'],
   // POS-12: floor and kitchen staff mark items unavailable ("86") as it happens.
   'pos.availability': ['owner', 'area_manager', 'manager', 'cashier', 'waiter', 'bartender', 'kitchen'],
+  // Registers shared POS tablets for PIN sign-in and clears a user's PIN.
+  'pos.device.manage': ['owner', 'admin', 'area_manager', 'manager'],
   'pos.report': ['owner', 'admin', 'area_manager', 'group_accounts', 'manager', 'accountant'],
 
   // Reports (RPT-02, RPT-07, RPT-08): hotel figures and the daily flash, on screen and as CSV/PDF (RPT-06).
@@ -107,6 +109,8 @@ export const PERMISSIONS = {
   'approve.cash_out': ['owner', 'area_manager', 'manager'],
   'approve.cash_variance': ['owner', 'area_manager', 'manager', 'group_accounts', 'accountant'],
   'approve.house_account': ['owner', 'area_manager', 'manager'],
+  // A copy of a guest bill that has not changed since it was printed, or of a receipt (Kahama, 9 Nov 2026).
+  'approve.bill_reprint': ['owner', 'area_manager', 'manager'],
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Permission = keyof typeof PERMISSIONS;
