@@ -848,3 +848,206 @@ export function PosSalesPage() {
     </>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Shared tablets and staff PINs (Kahama meeting, 9 Nov 2026, item 2.3)
+// ---------------------------------------------------------------------------
+interface Device {
+  id: string;
+  name: string;
+  idleSignoutSeconds: number;
+  signoutAfterSend: boolean;
+  registeredAt: string;
+  registeredBy: string;
+  lastSeenAt: string | null;
+  revokedAt: string | null;
+  revokedBy: string | null;
+}
+interface StaffPin {
+  id: string;
+  username: string;
+  displayName: string;
+  roles: string[];
+  pinSet: boolean;
+  pinSetAt: string | null;
+  pinLockedUntil: string | null;
+}
+
+const IDLE_CHOICES: Array<[number, string]> = [[60, '1 min'], [120, '2 min'], [300, '5 min'], [600, '10 min'], [1800, '30 min']];
+const when = (v: string | null) => (v ? new Date(v).toLocaleString('en-KE', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
+
+function DeviceRow({ d, onDone }: { d: Device; onDone: () => void }) {
+  const { property } = useSession();
+  const action = useAction<unknown>();
+  const save = (body: Partial<Pick<Device, 'idleSignoutSeconds' | 'signoutAfterSend'>>) =>
+    void action.run(() => api.patch(`${pos(property.code)}/devices/${d.id}`, body)).then((r) => r && onDone());
+  const active = !d.revokedAt;
+  return (
+    <tr>
+      <td>{d.name}</td>
+      <td>
+        {active ? (
+          <select value={d.idleSignoutSeconds} disabled={action.busy} onChange={(e) => save({ idleSignoutSeconds: Number(e.target.value) })} aria-label={`Idle sign-out for ${d.name}`}>
+            {IDLE_CHOICES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+          </select>
+        ) : `${Math.round(d.idleSignoutSeconds / 60)} min`}
+      </td>
+      <td>
+        <input type="checkbox" checked={d.signoutAfterSend} disabled={!active || action.busy} onChange={(e) => save({ signoutAfterSend: e.target.checked })} aria-label={`Sign out after every send on ${d.name}`} />
+      </td>
+      <td>{d.registeredBy} · {when(d.registeredAt)}</td>
+      <td>{when(d.lastSeenAt)}</td>
+      <td>
+        {active ? (
+          <button
+            className="ys-btn small danger ghost"
+            disabled={action.busy}
+            onClick={() => {
+              if (window.confirm(`Unregister ${d.name}? Anyone signed in on it with a PIN is signed out, and it goes back to password sign-in.`)) {
+                void action.run(({ key }) => api.post(`${pos(property.code)}/devices/${d.id}/revoke`, {}, key)).then((r) => r && onDone());
+              }
+            }}
+          >
+            Unregister
+          </button>
+        ) : (
+          <span className="ys-muted">Unregistered by {d.revokedBy} · {when(d.revokedAt)}</span>
+        )}
+        <ErrorText error={action.error} />
+      </td>
+    </tr>
+  );
+}
+
+export function PosTabletsPage() {
+  const { property } = useSession();
+  const devices = useLoad(() => api.get<Device[]>(`${pos(property.code)}/devices`), [property.code]);
+  const staff = useLoad(() => api.get<StaffPin[]>(`${pos(property.code)}/staff-pins`), [property.code]);
+  const action = useAction<unknown>();
+  return (
+    <>
+      <div className="ys-page-head">
+        <h1>Tablets and PINs · {property.name}</h1>
+      </div>
+      <p className="ys-muted">
+        A manager registers a shared tablet from the tablet itself (YeaStay POS → Register this tablet). On a registered tablet staff sign in by tapping their name and entering
+        their own PIN, and the tablet signs them out after the idle time below, and after every Send or finished payment if ticked. Everything is recorded under the person
+        signed in. Staff set their PIN on the tablet with "Set my PIN" after signing in with their password.
+      </p>
+      <h2>Registered tablets</h2>
+      <ErrorText error={devices.error} />
+      <table className="ys-table compact">
+        <thead><tr><th>Tablet</th><th>Sign out after no touch</th><th>Sign out after each sale</th><th>Registered</th><th>Last used</th><th></th></tr></thead>
+        <tbody>
+          {devices.data?.length === 0 && <tr><td colSpan={6} className="ys-muted">No tablets registered yet.</td></tr>}
+          {(devices.data ?? []).map((d) => <DeviceRow key={d.id} d={d} onDone={devices.reload} />)}
+        </tbody>
+      </table>
+      <h2>Staff PINs</h2>
+      <ErrorText error={staff.error ?? action.error} />
+      <table className="ys-table compact">
+        <thead><tr><th>Name</th><th>Username</th><th>Roles</th><th>PIN</th><th></th></tr></thead>
+        <tbody>
+          {(staff.data ?? []).map((s) => (
+            <tr key={s.id}>
+              <td>{s.displayName}</td>
+              <td>{s.username}</td>
+              <td>{s.roles.map(label).join(', ')}</td>
+              <td className={s.pinLockedUntil ? 'ys-warn-text' : ''}>
+                {s.pinLockedUntil ? `Locked until ${when(s.pinLockedUntil)}` : s.pinSet ? `Set ${when(s.pinSetAt)}` : 'Not set'}
+              </td>
+              <td>
+                {s.pinSet && (
+                  <button
+                    className="ys-btn small ghost"
+                    disabled={action.busy}
+                    onClick={() => {
+                      if (window.confirm(`Clear ${s.displayName}'s PIN? They sign in with their password and set a new one.`)) {
+                        void action.run(({ key }) => api.post(`${pos(property.code)}/staff/${s.id}/clear-pin`, {}, key)).then((r) => r && staff.reload());
+                      }
+                    }}
+                  >
+                    Clear PIN
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bill reprints (Kahama meeting, 9 Nov 2026, item 2.2)
+// ---------------------------------------------------------------------------
+interface ReprintReport {
+  copies: number;
+  updated: number;
+  byUser: Array<{ printedBy: string; updated: number; copies: number }>;
+  rows: Array<{
+    printedAt: string; checkNumber: string; outlet: string; kind: string; printNo: number; changed: boolean; reason: string | null;
+    printedBy: string; waiter: string; approvedBy: string | null; total: string; device: string | null; businessDate: string;
+  }>;
+}
+
+export function PosReprintsPage() {
+  const { property } = useSession();
+  const [from, setFrom] = useState(addDays(property.currentBusinessDate, -6));
+  const [to, setTo] = useState(property.currentBusinessDate);
+  const [outlet, setOutlet] = useState('');
+  const outlets = useLoad(() => api.get<PosOutletStatus[]>(`${pos(property.code)}/outlets`), [property.code]);
+  const filter = `from=${from}&to=${to}${outlet ? `&outlet=${outlet}` : ''}`;
+  const { data, error } = useLoad(() => api.get<ReprintReport>(`${pos(property.code)}/reports/bill-reprints?${filter}`), [property.code, filter]);
+  return (
+    <>
+      <div className="ys-page-head">
+        <h1>Bill reprints · {property.name}</h1>
+        <span className="spacer" />
+        <Field label="From"><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+        <Field label="To"><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+        <Field label="Outlet">
+          <select value={outlet} onChange={(e) => setOutlet(e.target.value)}>
+            <option value="">All outlets</option>
+            {(outlets.data ?? []).map((o) => <option key={o.code} value={o.code}>{o.name}</option>)}
+          </select>
+        </Field>
+      </div>
+      <p className="ys-muted">
+        A bill prints once. It prints again without approval only when it changed (items added or cancelled, a discount, a part payment): that is an updated bill. A copy of an
+        unchanged bill, and any receipt copy, needs a reason and a manager's approval. Every print is logged; this page lists everything after the first print.
+      </p>
+      <ErrorText error={error} />
+      {data && (
+        <>
+          <div className="ys-tiles small">
+            <div className={`ys-tile${data.copies ? ' alert' : ''}`}><strong>{data.copies}</strong><span>Copies of unchanged bills and receipts (approved)</span></div>
+            <div className="ys-tile"><strong>{data.updated}</strong><span>Updated bills (bill changed)</span></div>
+          </div>
+          <h2>By person</h2>
+          <table className="ys-table compact">
+            <thead><tr><th>Printed by</th><th>Copies</th><th>Updated bills</th></tr></thead>
+            <tbody>
+              {data.byUser.length === 0 && <tr><td colSpan={3} className="ys-muted">No reprints in this period.</td></tr>}
+              {data.byUser.map((u) => <tr key={u.printedBy}><td>{u.printedBy}</td><td>{u.copies}</td><td>{u.updated}</td></tr>)}
+            </tbody>
+          </table>
+          <h2>Every reprint</h2>
+          <table className="ys-table compact">
+            <thead><tr><th>Time</th><th>Check</th><th>Outlet</th><th>Slip</th><th>Print</th><th>Why</th><th>Printed by</th><th>Approved by</th><th>Tablet</th><th>Total</th></tr></thead>
+            <tbody>
+              {data.rows.length === 0 && <tr><td colSpan={10} className="ys-muted">None.</td></tr>}
+              {data.rows.map((r) => (
+                <tr key={`${r.checkNumber}-${r.kind}-${r.printNo}`} className={r.changed ? '' : 'ys-warn-text'}>
+                  <td>{when(r.printedAt)}</td><td>{r.checkNumber}</td><td>{r.outlet}</td><td>{label(r.kind)}</td><td>#{r.printNo}</td>
+                  <td>{r.changed ? 'Bill changed' : r.reason}</td><td>{r.printedBy}</td><td>{r.approvedBy ?? '—'}</td><td>{r.device ?? '—'}</td><td>{kes(r.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </>
+  );
+}

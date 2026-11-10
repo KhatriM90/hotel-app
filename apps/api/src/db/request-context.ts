@@ -27,6 +27,8 @@ export interface RequestContext {
   worker?: boolean;
   /** Set for a paired door-lock bridge (INT-09); `property` is its property. */
   bridge?: boolean;
+  /** The registered POS tablet a PIN sign-in came from, if any. */
+  posDeviceId?: string;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();

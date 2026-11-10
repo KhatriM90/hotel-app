@@ -170,6 +170,35 @@ Back office as `k1.manager`, **POS day close**.
 - [ ] Close the day on an outlet with no open checks. The dialog shows the X totals (sales by category, tenders, room charges, house accounts, discounts, voids, refunds) and **Print X report**. Click **Close the day**: the Z report is stored and **Print Z report** prints it. **Z reports** lists it with every earlier one.
 - [ ] As `k1.reception`, close the property's business day (front desk). It is refused while any outlet still has an open trading day for that date that has sales; outlets with no sales close themselves.
 
+## 17. Bill reprint control (Kahama meeting 9 Nov 2026, item 2.2; POS-10, SEC-02)
+
+As `k1.waiter` on the tablet:
+
+- [ ] Open a check, add an item, **Print bill**. It prints as a normal BILL.
+- [ ] **Print bill** again without changing anything. A **Bill reprint** box asks for a reason and a manager's username and password. Cancel: nothing prints.
+- [ ] Try again with a reason and your own (waiter) username and password: refused. With `k1.manager`: it prints, and the slip says **REPRINT #1 · COPY**.
+- [ ] Add another item and **Print bill**: it prints straight away and the slip says **UPDATED BILL · PRINT 3**. (Cancelling an item, a discount or a part payment also count as a change.)
+- [ ] Pay the check and **Print receipt**: prints. Print it again: needs a reason and a manager again.
+- [ ] As `k1.manager` the reprint box asks only for a reason (managers approve their own copies).
+- [ ] Back office as `k1.manager`, **Bill reprints**: the copies (approved) and updated bills, by person, with reason, approver and tablet.
+
+## 18. Shared tablets: PIN sign-in and automatic sign-out (meeting item 2.3; SEC-03)
+
+- [ ] On the tablet, sign in as `k1.waiter` with the password. Top bar: **Set my PIN**. Enter the password and a PIN such as `4826` twice. `1234`, `0000` and other runs or repeats are refused.
+- [ ] Sign out and sign in as `k1.manager` with the password. **Choose a mode** shows **Register this tablet**. Name it (for example "Shed bar tablet"), choose *Sign out after no touch for 1 minute*, tick *Also sign out after every Send and finished payment*, and register.
+- [ ] Sign out. The sign-in screen now shows name tiles: tap **K1 waiter**, enter the PIN on the keypad. You are in, and the top bar shows the name in bold and the tablet's name.
+- [ ] Leave the tablet untouched: after 45 seconds an amber bar counts down from 15; touch the screen to stay. Leave it again: it signs out by itself and goes back to the name tiles.
+- [ ] Sign in with the PIN, open a check, add an item and **Send order**: it sends and then signs you out. Paying a check signs you out when you tap **Done**.
+- [ ] Enter a wrong PIN five times: the PIN locks for five minutes. Back office **Tablets and PINs** shows it as locked; **Clear PIN** removes it, and the waiter sets a new one after signing in with the password.
+- [ ] Back office **Tablets and PINs**: change the idle time or the after-sale setting; the tablet picks it up at its next sign-in. **Unregister**: anyone signed in on it with a PIN is signed out at their next tap, and it goes back to password sign-in.
+- [ ] A PIN works only on the tablet it was entered on and only at its property: a K1 tablet never shows Kahama staff.
+- [ ] The kitchen/bar ticket screen never signs out by itself, and neither does a tablet while it is offline (nobody could sign in again until the connection returns).
+- [ ] Offline orders: take an order offline as one waiter, sign out, sign in as another and reconnect. The queued order is sent under the first waiter's name, not the second's.
+
+## 19. One tap at a time (meeting item 2.1)
+
+- [ ] On a slow connection (browser dev tools, "Slow 3G"), tap **Send order** or **PAY** several times quickly. The button shows a spinner and the other order buttons dim; further taps are ignored until the server answers, so nothing is sent or paid twice.
+
 ---
 
 ## What is not in this module

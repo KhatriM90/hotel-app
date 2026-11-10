@@ -12,7 +12,7 @@ import { RequestsPage } from './frontdesk/Requests';
 import { NewReservationPage, ReservationDetailPage, ReservationsPage } from './frontdesk/Reservations';
 import { RoomDashboardPage } from './frontdesk/RoomDashboard';
 import { RatesPage, RoomsPage } from './frontdesk/Rooms';
-import { PosDaysPage, PosMenuPage, PosSalesPage, PosSettingsPage, PosShiftsPage } from './pos/Pos';
+import { PosDaysPage, PosMenuPage, PosReprintsPage, PosSalesPage, PosSettingsPage, PosShiftsPage, PosTabletsPage } from './pos/Pos';
 import { ReportsPage } from './reports/Catalog';
 import { FlashReportPage, HotelReportPage } from './reports/Reports';
 
@@ -30,7 +30,7 @@ function BusinessDateBadge({ property }: { property: Property }) {
 type Page =
   | 'desk' | 'room-dashboard' | 'calendar' | 'reservations' | 'new-reservation' | 'reservation' | 'folio'
   | 'guests' | 'guest' | 'agents' | 'requests' | 'rooms' | 'rates' | 'door-locks'
-  | 'pos-days' | 'pos-sales' | 'pos-shifts' | 'pos-menu' | 'pos-settings'
+  | 'pos-days' | 'pos-sales' | 'pos-shifts' | 'pos-reprints' | 'pos-menu' | 'pos-tablets' | 'pos-settings'
   | 'reports' | 'report-flash' | 'report-hotel'
   | 'overview' | 'outlets' | 'integration';
 
@@ -52,7 +52,9 @@ const NAV: Array<[Page, string, (Permission | Permission[])?]> = [
   ['pos-days', 'POS day close', 'pos.report'],
   ['pos-sales', 'POS sales', 'pos.report'],
   ['pos-shifts', 'Cash shifts', 'pos.report'],
+  ['pos-reprints', 'Bill reprints', 'pos.report'],
   ['pos-menu', 'Menus and prices', 'pos.menu.read'],
+  ['pos-tablets', 'Tablets and PINs', 'pos.device.manage'],
   ['pos-settings', 'Business day and POS', 'pos.report'],
   ['overview', 'Properties'],
   ['outlets', 'Outlets'],
@@ -295,7 +297,9 @@ export function App() {
               {page === 'pos-days' && <PosDaysPage key={current} />}
               {page === 'pos-sales' && <PosSalesPage key={current} />}
               {page === 'pos-shifts' && <PosShiftsPage key={current} />}
+              {page === 'pos-reprints' && <PosReprintsPage key={current} />}
               {page === 'pos-menu' && <PosMenuPage key={current} />}
+              {page === 'pos-tablets' && <PosTabletsPage key={current} />}
               {page === 'pos-settings' && <PosSettingsPage key={current} />}
             </SessionContext.Provider>
           )}

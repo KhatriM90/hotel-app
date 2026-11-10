@@ -439,10 +439,11 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
       } finally {
         await owner.end();
       }
-      const receipt = await api('k1.cashier').get(`${POS}/checks/${check.id}/print`).expect(200);
-      expect(receipt.text).toContain('RECEIPT');
-      expect(receipt.text).toContain('1,350.00');
-      expect(receipt.text).toContain('Powered by YeaStay');
+      const receipt = await api('k1.cashier').post(`${POS}/checks/${check.id}/print`).expect(200);
+      expect(receipt.body).toMatchObject({ kind: 'receipt', printNo: 1 });
+      expect(receipt.body.html).toContain('RECEIPT');
+      expect(receipt.body.html).toContain('1,350.00');
+      expect(receipt.body.html).toContain('Powered by YeaStay');
     });
 
     it('a duplicate M-PESA reference is refused; a replayed request records the payment once (AT-03)', async () => {

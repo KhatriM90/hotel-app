@@ -51,7 +51,7 @@ ${property.kraPin ? `<div class="c">KRA PIN ${esc(property.kraPin)}</div>` : ''}
 }
 
 /** Guest bill before payment, or receipt once closed (POS-10). */
-export function renderCheck(check: Json, property: Json): string {
+export function renderCheck(check: Json, property: Json, print?: { printNo: number; changed: boolean }): string {
   const closed = check.status === 'closed';
   const title = check.status === 'void' ? 'VOID' : closed ? 'RECEIPT' : 'BILL';
   const live = (check.lines as Json[]).filter((l) => l.status !== 'cancelled' && l.status !== 'wasted');
@@ -95,6 +95,7 @@ export function renderCheck(check: Json, property: Json): string {
     `${title} ${check.number}`,
     `${header(property, check.outletName)}
 <h2>${title}</h2>
+${print && print.printNo > 1 ? `<div class="reprint">${print.changed ? `UPDATED ${title} · PRINT ${esc(print.printNo)}` : `REPRINT #${esc(print.printNo - 1)} · COPY`}</div>` : ''}
 <div>Check ${esc(check.number)}${check.tableCode ? ` · Table ${esc(check.tableCode)}` : ''}${check.tabName ? ` · ${esc(check.tabName)}` : ''}</div>
 <div>${esc(label(check.serviceType))}${check.roomNumber ? ` · Room ${esc(check.roomNumber)}` : ''} · Covers ${esc(check.covers)}</div>
 <div>Server ${esc(check.waiter)} · ${esc(check.businessDate)}</div>

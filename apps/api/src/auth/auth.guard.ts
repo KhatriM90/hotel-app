@@ -80,13 +80,23 @@ export class AuthGuard implements CanActivate {
     }
 
     let sub: string;
+    let dev: string | undefined;
     try {
-      ({ sub } = await this.jwt.verifyAsync<{ sub: string }>(token));
+      ({ sub, dev } = await this.jwt.verifyAsync<{ sub: string; dev?: string }>(token));
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
     const user = await this.auth.loadActiveUser(sub);
     if (!user) throw new UnauthorizedException('User inactive or not found');
+    // A PIN sign-in belongs to one registered tablet: it ends when the tablet
+    // is revoked and only works at the tablet's property.
+    let deviceProperty: string | undefined;
+    if (dev) {
+      const device = await this.auth.deviceById(dev);
+      if (!device) throw new UnauthorizedException({ statusCode: 401, error: 'device_revoked', message: 'This tablet is no longer registered; sign in again' });
+      store.posDeviceId = device.id;
+      deviceProperty = device.propertyCode;
+    }
     store.user = user;
     store.scope = user.allProperties ? { all: true, propertyIds: [] } : { all: false, propertyIds: user.propertyIds };
 
@@ -98,6 +108,7 @@ export class AuthGuard implements CanActivate {
     const param = this.meta<string>(PROPERTY_PARAM, ctx);
     if (param) {
       const code = String(req.params[param] ?? '').toUpperCase();
+      if (deviceProperty && code !== deviceProperty) throw new ForbiddenException(`This tablet is registered to ${deviceProperty}`);
       // RLS hides properties outside the user's scope, so "not found" and
       // "not allowed" look the same to the caller (no data leak).
       const { rows } = await this.db.tx((q) =>

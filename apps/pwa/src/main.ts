@@ -1,7 +1,8 @@
 import { api, ApiError, OfflineError } from './api';
 import { label, probe, type ConnectionState } from './connection';
 import { StationApp } from './station';
-import { esc, showError } from './ui';
+import { canManageDevices, IdleGuard, registerTablet, setMyPin, showPinLogin } from './tablet';
+import { esc, showError, toast } from './ui';
 import { WaiterApp } from './waiter';
 import './style.css';
 
@@ -26,7 +27,9 @@ setInterval(tick, 20_000);
 const statusEl = document.getElementById('status')!;
 let waiter: WaiterApp | null = null;
 let station: StationApp | null = null;
+let online = true;
 function renderStatus(state: ConnectionState) {
+  if (state !== 'checking') online = state === 'online';
   statusEl.className = `status ${state}`;
   statusEl.textContent = state === 'offline' && waiter ? 'Offline: orders are saved on this tablet and sent later. Payments and room charges wait.' : label(state);
   if (state !== 'checking') waiter?.setOnline(state === 'online');
@@ -51,19 +54,66 @@ const canStation = () => roles().some((r) => ['owner', 'area_manager', 'manager'
 const canBackOffice = () => roles().some((r) => !['waiter', 'bartender', 'kitchen'].includes(r));
 const canHousekeeping = () => roles().some((r) => ['owner', 'admin', 'manager', 'receptionist', 'housekeeper'].includes(r));
 
+// ---------------------------------------------------------------------------
+// Signing in and out (Kahama meeting, 2.3): every sign-out reloads the app, so
+// nothing of the previous user (screens, timers, open check) survives into the
+// next person's session.
+// ---------------------------------------------------------------------------
+const FLASH_KEY = 'yeastay.pwa.flash';
+let idle: IdleGuard | null = null;
+
+function signOut(message?: string) {
+  idle?.stop();
+  station?.stop();
+  api.logout();
+  try {
+    if (message) sessionStorage.setItem(FLASH_KEY, message);
+  } catch {
+    /* private mode: the message is only a courtesy */
+  }
+  location.reload();
+}
+
+/** On a registered tablet, sign out after its idle time (any sign-in, PIN or password). */
+function guardSession() {
+  idle?.stop();
+  idle = null;
+  const d = api.device;
+  if (!d || !api.session) return;
+  // The kitchen/bar ticket screen is watched, not touched: it never signs out by itself.
+  idle = new IdleGuard(d.idleSignoutSeconds, () => signOut('Signed out after no activity'), () => online && !station);
+  idle.start();
+}
+
+/** After a Send or a finished payment, a tablet set to do so signs the waiter out. */
+function afterSale() {
+  const d = api.device;
+  if (!d?.signoutAfterSend || !online) return;
+  toast(`Signing ${api.session?.user.displayName ?? 'you'} out…`, 'info');
+  setTimeout(() => signOut(), 1500);
+}
+
 function renderWho() {
   const s = api.session;
-  who.innerHTML = s ? `${esc(s.user.displayName)}${s.propertyCode ? ` · ${esc(s.propertyCode)}` : ''} <button class="link light" id="logout">Sign out</button>` : '';
-  document.getElementById('logout')?.addEventListener('click', () => {
-    station?.stop();
-    waiter = null;
-    station = null;
-    api.logout();
-    void route();
-  });
+  who.innerHTML = s
+    ? `<strong class="who-name">${esc(s.user.displayName)}</strong>${s.propertyCode ? ` · ${esc(s.propertyCode)}` : ''}${api.device ? ` · ${esc(api.device.name)}` : ''}
+       <button class="link light" id="set-pin">Set my PIN</button> <button class="link light" id="logout">Sign out</button>`
+    : api.device
+      ? `${esc(api.device.name)}`
+      : '';
+  document.getElementById('logout')?.addEventListener('click', () => signOut());
+  document.getElementById('set-pin')?.addEventListener('click', () => void setMyPin().catch(showError));
 }
 
 function showLogin(error = '') {
+  if (api.device && !error) {
+    void showPinLogin(main, () => void route(), (msg) => showPasswordLogin(msg ?? '')).catch((err) => showPasswordLogin(err instanceof Error ? err.message : String(err)));
+    return;
+  }
+  showPasswordLogin(error);
+}
+
+function showPasswordLogin(error = '') {
   main.innerHTML = `
     <form class="card login" id="login">
       <h1>Sign in</h1>
@@ -71,7 +121,9 @@ function showLogin(error = '') {
       <label>Username<input name="username" autocomplete="username" autocapitalize="off" required></label>
       <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
       <button class="primary big" type="submit">Sign in</button>
+      ${api.device ? '<button class="link" type="button" data-pin>Back to PIN sign-in</button>' : ''}
     </form>`;
+  main.querySelector('[data-pin]')?.addEventListener('click', () => showLogin());
   document.getElementById('login')!.addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = new FormData(e.target as HTMLFormElement);
@@ -98,7 +150,16 @@ async function chooseProperty(): Promise<string | null> {
   main.querySelectorAll<HTMLButtonElement>('[data-p]').forEach((b) =>
     b.addEventListener('click', () => {
       api.session = { ...api.session!, propertyCode: b.dataset.p };
-      void route();
+      try {
+  const flash = sessionStorage.getItem(FLASH_KEY);
+  if (flash) {
+    sessionStorage.removeItem(FLASH_KEY);
+    toast(flash, 'info');
+  }
+} catch {
+  /* ignore */
+}
+void route();
     }),
   );
   return null;
@@ -109,9 +170,23 @@ function chooseMode(property: string) {
     canSell() ? '<button class="mode" data-mode="waiter"><strong>Waiter / bar POS</strong><span>Tables, tabs, orders, bills and payments</span></button>' : '',
     canStation() ? '<button class="mode" data-mode="station"><strong>Kitchen / bar tickets</strong><span>Orders to prepare, bump when ready</span></button>' : '',
     canHousekeeping() ? '<button class="mode soon" data-mode="housekeeping"><strong>Housekeeping</strong><span>Not built yet (HK-01 to HK-04)</span></button>' : '',
+    canManageDevices(roles())
+      ? `<button class="mode" data-tablet><strong>${api.device ? `This tablet: ${esc(api.device.name)}` : 'Register this tablet'}</strong><span>${
+          api.device ? 'PIN sign-in is on. Change its sign-out settings or register it again' : 'Let staff sign in here with their name and PIN; signs them out by itself'
+        }</span></button>`
+      : '',
     canBackOffice() ? '<a class="mode" href="/"><strong>Back office ›</strong><span>Front desk, reservations, rooms, POS day close and sales, SAP postings</span></a>' : '',
   ];
   main.innerHTML = `<h1>Choose a mode</h1><div class="modes">${modes.join('')}</div>`;
+  main.querySelector('[data-tablet]')?.addEventListener('click', () =>
+    void registerTablet(property)
+      .then(() => {
+        renderWho();
+        guardSession();
+        chooseMode(property);
+      })
+      .catch(showError),
+  );
   main.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
     b.addEventListener('click', () => {
       if (b.dataset.mode === 'housekeeping') return housekeepingSoon(property);
@@ -156,10 +231,16 @@ async function chooseOutlet(property: string) {
 }
 
 async function startWaiter(property: string, outletCode: string) {
-  waiter = new WaiterApp(main, property, outletCode, () => {
-    waiter = null;
-    void chooseOutlet(property).catch(showError);
-  });
+  waiter = new WaiterApp(
+    main,
+    property,
+    outletCode,
+    () => {
+      waiter = null;
+      void chooseOutlet(property).catch(showError);
+    },
+    afterSale,
+  );
   await waiter.start().catch(showError);
 }
 
@@ -185,6 +266,9 @@ async function chooseStation(property: string) {
 async function route() {
   renderWho();
   if (!api.session) return showLogin();
+  // A tablet registered to one property only serves that property.
+  if (api.device && !api.session.propertyCode) api.session = { ...api.session, propertyCode: api.device.propertyCode };
+  if (!idle) guardSession();
   try {
     const property = await chooseProperty();
     renderWho();
@@ -193,7 +277,11 @@ async function route() {
     if (mode === 'waiter' && canSell()) await chooseOutlet(property);
     else chooseMode(property);
   } catch (err) {
-    if (err instanceof ApiError && err.status === 401) return showLogin('Your session ended; sign in again');
+    if (err instanceof ApiError && err.status === 401) {
+      idle?.stop();
+      idle = null;
+      return showLogin(err.code === 'device_revoked' ? '' : 'Your session ended; sign in again');
+    }
     showError(err);
   }
 }

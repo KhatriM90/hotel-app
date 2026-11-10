@@ -30,9 +30,30 @@ export interface Session {
   token: string;
   user: Me;
   propertyCode?: string;
+  /** Set when the user signed in with a PIN on this registered tablet. */
+  viaPin?: boolean;
+}
+
+/** A shared tablet registered by a manager for PIN sign-in (Kahama meeting, 9 Nov 2026). */
+export interface DeviceInfo {
+  id: string;
+  name: string;
+  propertyCode: string;
+  propertyName?: string;
+  idleSignoutSeconds: number;
+  signoutAfterSend: boolean;
+}
+export interface RegisteredDevice extends DeviceInfo {
+  token: string;
+}
+export interface DeviceStaff {
+  id: string;
+  displayName: string;
+  roles: string[];
 }
 
 const SESSION_KEY = 'yeastay.pwa.session';
+const DEVICE_KEY = 'yeastay.pwa.device';
 
 export function newKey(prefix = 'pwa'): string {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -69,8 +90,52 @@ export class Api {
     this.session = null;
   }
 
-  async request<T>(method: string, path: string, body?: unknown, key?: string, auth = true): Promise<T> {
-    const headers: Record<string, string> = { 'content-type': 'application/json' };
+  /** The registered tablet this browser is, if any. Its token stays on the tablet across sign-ins. */
+  get device(): RegisteredDevice | null {
+    try {
+      return JSON.parse(this.storage.getItem(DEVICE_KEY) ?? 'null') as RegisteredDevice | null;
+    } catch {
+      return null;
+    }
+  }
+
+  set device(d: RegisteredDevice | null) {
+    if (d) this.storage.setItem(DEVICE_KEY, JSON.stringify(d));
+    else this.storage.removeItem(DEVICE_KEY);
+  }
+
+  /** This tablet's current settings and the staff who can sign in on it with a PIN. */
+  async deviceStaff(): Promise<{ device: DeviceInfo; staff: DeviceStaff[] }> {
+    const d = this.device;
+    if (!d) throw new ApiError(401, 'This tablet is not registered', 'device_not_registered');
+    const res = await this.request<{ device: DeviceInfo; staff: DeviceStaff[] }>('GET', '/auth/pos-device', undefined, undefined, false, { 'x-pos-device': d.token });
+    this.device = { ...d, ...res.device };
+    return res;
+  }
+
+  async pinLogin(userId: string, pin: string): Promise<Session> {
+    const d = this.device;
+    if (!d) throw new ApiError(401, 'This tablet is not registered', 'device_not_registered');
+    const res = await this.request<{ accessToken: string; user: Me; propertyCode: string; device: DeviceInfo }>(
+      'POST', '/auth/pin-login', { userId, pin }, undefined, false, { 'x-pos-device': d.token },
+    );
+    this.device = { ...d, ...res.device };
+    const session = { token: res.accessToken, user: res.user, propertyCode: res.propertyCode, viaPin: true };
+    this.session = session;
+    return session;
+  }
+
+  /**
+   * Sends a request with a given user's token: offline actions replay under
+   * the waiter who took them, never under whoever is signed in now. A refusal
+   * does not sign the current user out.
+   */
+  requestAs<T>(token: string, method: string, path: string, body?: unknown, key?: string): Promise<T> {
+    return this.request<T>(method, path, body, key, false, { authorization: `Bearer ${token}` });
+  }
+
+  async request<T>(method: string, path: string, body?: unknown, key?: string, auth = true, extraHeaders: Record<string, string> = {}): Promise<T> {
+    const headers: Record<string, string> = { 'content-type': 'application/json', ...extraHeaders };
     const token = this.session?.token;
     if (auth && token) headers.authorization = `Bearer ${token}`;
     if (key) headers['idempotency-key'] = key;
