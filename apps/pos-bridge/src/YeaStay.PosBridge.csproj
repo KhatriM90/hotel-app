@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    YeaStay POS bridge (INT-04). Runs on a PC at each property and prints
+    kitchen/bar tickets, bills and receipts on the property's Epson printers.
+    Later it will also hand fiscal receipts to the TIMS device (INT-02).
+      dotnet publish src -c Release -r win-x86 -p:PublishSingleFile=true -p:SelfContained=true
+    x86 so that the TIMS vendors' 32-bit libraries can be loaded in the same program.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>YeaStayPosBridge</AssemblyName>
+    <RootNamespace>YeaStay.PosBridge</RootNamespace>
+    <Version>0.1.0</Version>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x86'">
+    <PlatformTarget>x86</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="appsettings.example.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <InternalsVisibleTo Include="YeaStay.PosBridge.Tests" />
+  </ItemGroup>
+</Project>

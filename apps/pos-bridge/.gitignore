@@ -1,0 +1,6 @@
+bin/
+obj/
+logs/
+outbox/
+publish/
+appsettings.json

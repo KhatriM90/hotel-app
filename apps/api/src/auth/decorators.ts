@@ -7,6 +7,7 @@ export const PERMISSION = 'auth:permission';
 export const PROPERTY_PARAM = 'auth:propertyParam';
 export const WORKER_ONLY = 'auth:worker';
 export const BRIDGE_ONLY = 'auth:doorLockBridge';
+export const POS_BRIDGE_ONLY = 'auth:posBridge';
 
 /** No authentication required. */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
@@ -32,3 +33,9 @@ export const BridgeOnly = () => SetMetadata(BRIDGE_ONLY, true);
 
 export const CurrentUser = createParamDecorator((_: unknown, _ctx: ExecutionContext) => requestContext.get()?.user);
 export const CurrentProperty = createParamDecorator((_: unknown, _ctx: ExecutionContext) => requestContext.get()?.property);
+
+/**
+ * Only a paired POS bridge (INT-04 printing) may call this route. Its bearer
+ * token names one property; the request is scoped to that property alone.
+ */
+export const PosBridgeOnly = () => SetMetadata(POS_BRIDGE_ONLY, true);

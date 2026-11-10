@@ -65,6 +65,7 @@ let idle: IdleGuard | null = null;
 function signOut(message?: string) {
   idle?.stop();
   station?.stop();
+  waiter?.stop();
   api.logout();
   try {
     if (message) sessionStorage.setItem(FLASH_KEY, message);

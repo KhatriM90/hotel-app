@@ -35,6 +35,7 @@ Status key: **Done** = satisfied for what exists today · **Partial** = foundati
 | BIL-04 | Partial | Idempotency and outbox status (pending/claimed/posted/failed/dead), retries with backoff. No postings exist yet. |
 | BIL-07 | Partial | Database guards in place; linked charge reversals done (see below). Refunds and credit notes not yet. |
 | BIL-09 | Done (this module) | See below. |
+| INT-04 | Partial | Kitchen/bar tickets, bills and receipts print on Epson printers (network port 9100 or USB through Windows) via the YeaStay POS bridge on a PC at each property (`apps/pos-bridge`). ESC/POS rendered by YeaStay; printer status checked before each job; 3 tries, then the backup printer and an alert on the waiter and station screens; job status per ticket; Printers page for set-up and pairing. Printing needs the property's internet connection; TIMS devices not yet. See [printing.md](printing.md). |
 | INT-09 | Partial | TEMIC20 (V20 RF) guest key cards via a bridge on each reception's encoder PC (`apps/door-lock-bridge`, HUNERF.dll): new card and copies at check-in, card for the new room after a move, expiry at check-out time plus grace, read card. Tested against a mock encoder; first real-lock test waits for the supplier's SystemCode/HotelCode. Erase at checkout waits for the supplier to document `CheckoutCard`/`ClearCard`. See [door-locks.md](door-locks.md). |
 | INT-07 | Partial | Cloud outbox + HQ pull worker (outbound only) + Service Layer client + mock. |
 | SAP-04 | Partial | A/R invoice mapping with branch, dimensions, UDFs; tax codes and item codes TBC from mapping workbook. |
@@ -117,7 +118,7 @@ Migrations `0014`–`0015`; API in `apps/api/src/pos`; waiter, bar and kitchen t
 | POS-04 | Done | Table, counter, takeaway and room service per outlet; residents (room service, charge to room) and walk-in customers. |
 | POS-05 | Done | Tables per outlet, covers, assigned waiter, open checks and named bar tabs; move a check to another table. |
 | POS-06 | Done | Line states draft → sent → preparing → ready → served, plus cancelled and wasted; check states open → closed or voided. Every step is in an append-only check history. |
-| POS-07 | Done | Food routes to the kitchen, drinks to the outlet's bar, per outlet. Tickets show table/room/tab, server, time, modifiers and notes. Reprints are numbered and say REPRINT; cancellations print a CANCEL ticket. Tickets print from the browser until the print bridge (INT-04) exists. |
+| POS-07 | Done | Food routes to the kitchen, drinks to the outlet's bar, per outlet. Tickets show table/room/tab, server, time, modifiers and notes. Reprints are numbered and say REPRINT; cancellations print a CANCEL ticket. Tickets print automatically on the station's printer through the print bridge (INT-04), or from the browser where a station has no printer. |
 | POS-08 | Done | Split by item or part quantity to a new check, merge open checks, move tables, split settlement across tenders, room charge and house account. Totals are unchanged to the cent. |
 | POS-09 | Done | Lookup in-house guests by room or name with eligibility and available credit; posts itemised folio charges; shows the folio and reference, or the reason it was refused. |
 | POS-10 | Done | Cash (with change), M-PESA, card, bank transfer and other; mixed tenders; pending payments confirmed or failed; printable bill and receipt; balance due kept. M-PESA is a typed reference until the Daraja integration (INT-01). Email receipts are not built. |
@@ -159,7 +160,7 @@ Migrations `0014`–`0015`; API in `apps/api/src/pos`; waiter, bar and kitchen t
 
 - eTIMS fiscal receipts (INT-02); receipts say "eTIMS receipt not yet issued".
 - M-PESA STK push and C2B confirmation (INT-01); card terminals (INT-03).
-- Print bridge for LAN ticket and receipt printers (INT-04).
+- Printing while the property's internet is down (INT-04 prints through the cloud).
 - SAP credit memo for POS refunds; SAP till and M-PESA clearing accounts per property (SAP-16); the walk-in customer code.
 - Stock deduction and recipes in SAP (SAP-18).
 
@@ -240,7 +241,7 @@ From the minutes of Kahama Mombasa's service team (waiters, supervisors). Scope 
 | 2.1 Slow POS, repeated taps post items twice | Done (tablet) | One action at a time on the check screen: Send, Pay and every other check action lock until the server answers (spinner), so repeated taps are ignored. Items already went to a local basket at once, and every order carries an idempotency key. A peak-hour load test is still to do. |
 | 2.2 Waiters reprint bills without limit | Done | `pos_bill_prints` (append-only): every bill and receipt print with who, which tablet, total and what the bill held. A print after the bill changed is free and says UPDATED BILL; a copy of an unchanged bill, and any receipt copy, needs a reason and a manager (`approve.bill_reprint`, stored in `approvals`) and says REPRINT #n. `POST /pos/checks/:id/print` replaces the old GET. Back office **Bill reprints** report (`GET /pos/reports/bill-reprints`). |
 | 2.3 The next person ends up working as the previous user | Done | Registered tablets (`pos_devices`, token hashed) with PIN sign-in by name (`POST /auth/pin-login`); PINs are scrypt-hashed, 4–6 digits, no repeats or runs, locked for 5 min after 5 wrong tries; a PIN session names its tablet, works only at its property and ends when the tablet is unregistered. Each tablet signs out after its idle time (default 2 min) and optionally after every Send or finished payment; signing out reloads the app so nothing of the previous user remains. Offline orders replay under the waiter who took them. Back office **Tablets and PINs** (`pos.device.manage`). |
-| 2.4 Kitchen tickets fail to print, no warning | Not started | Needs the print bridge (INT-04) and the printer models at Kahama. |
+| 2.4 Kitchen tickets fail to print, no warning | Done | Print bridge (INT-04): each ticket shows Printed / Not printed; 3 tries, then the backup printer; a red alert with a beep on the waiter tablets and the station screen until someone prints it again or marks it done. Epson models at Kahama still to confirm. |
 | 2.5 ETR / KRA PIN receipts don't print automatically | Not started | Needs the TIMS integration (INT-02) and Kahama's TIMS device model. |
 | 2.6 Deactivate items when stock runs out, allowing for store transfers | Not started | Today: manual 86 and optional daily counts (POS-12). Proposal: availability from the outlet's SAP warehouse stock (INV-02, INV-08). |
 | 2.7 IT support on night shifts | Not software | Staffing. |
