@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { HOUSE_ACCOUNT_KINDS, POS_TENDERS, SERVICE_TYPES } from '@hotel/shared';
 import { z } from 'zod';
-import { CurrentProperty, PropertyScoped, RequirePermission } from '../auth/decorators';
+import { CurrentProperty, PosBridgeOnly, PropertyScoped, RequirePermission } from '../auth/decorators';
 import { ZodPipe } from '../common/zod.pipe';
 import { Amount, ApprovalInput, CurrentPropertyT, IsoDate, Quantity, Reason, Time } from '../frontoffice/common';
 import { FoliosService } from '../frontoffice/folios.service';
@@ -12,6 +12,7 @@ import { PosMenuService } from './menu.service';
 import { renderDayReport, renderTicket } from './render';
 import { PosBillPrintsService } from './bill-prints.service';
 import { PosDevicesService } from './devices.service';
+import { PosPrintingService } from './printing.service';
 import { PosReportsService } from './reports.service';
 import { PosSettingsService } from './settings.service';
 import { PosSettlementService } from './settlement.service';
@@ -138,6 +139,33 @@ const SalesQuery = z.object({ from: IsoDate, to: IsoDate, outlet: Code.optional(
 const DeviceSettings = z.object({
   idleSignoutSeconds: z.number().int().min(30).max(1800).optional(),
   signoutAfterSend: z.boolean().optional(),
+});
+const Host = z.string().trim().regex(/^[A-Za-z0-9.-]{1,253}$/, 'an IP address or host name');
+const PrinterFields = {
+  name: z.string().trim().min(2).max(60),
+  connection: z.enum(['network', 'windows']),
+  host: Host.nullish(),
+  port: z.number().int().min(1).max(65535).optional(),
+  windowsName: z.string().trim().min(1).max(200).nullish(),
+  paperMm: z.union([z.literal(58), z.literal(80)]).optional(),
+  backupPrinterId: Uuid.nullish(),
+  isActive: z.boolean().optional(),
+};
+const CreatePrinter = z
+  .object({ code: z.string().regex(/^[A-Za-z0-9-]{2,16}$/), ...PrinterFields })
+  .refine((v) => (v.connection === 'network' ? !!v.host : !!v.windowsName), 'a network printer needs its IP address; a Windows printer needs its name');
+const UpdatePrinter = z.object(PrinterFields).partial().refine((v) => Object.keys(v).length > 0, 'nothing to change');
+const AssignPrinter = z
+  .object({ station: Code.optional(), outlet: Code.optional(), printerId: Uuid.nullable() })
+  .refine((v) => !!v.station !== !!v.outlet, 'give a station or an outlet');
+const RetryPrint = z.object({ printerId: Uuid.optional() });
+const AlertQuery = z.object({ outlet: Code.optional(), station: Code.optional() });
+const JobsQuery = z.object({ failed: z.enum(['true', 'false']).optional() });
+const PosBridgeHello = z.object({ bridgeId: z.string().regex(/^[A-Za-z0-9._-]{3,64}$/), version: z.string().max(40), mode: z.enum(['live', 'mock']) });
+const PosBridgeResult = z.object({
+  bridgeId: z.string().min(3).max(64),
+  outcome: z.enum(['printed', 'failed']),
+  error: z.string().max(1000).nullish(),
 });
 const RegisterDevice = DeviceSettings.extend({ name: z.string().trim().min(2).max(60) });
 
@@ -649,5 +677,117 @@ export class PosDevicesController {
   @RequirePermission('pos.report')
   reprints(@CurrentProperty() p: CurrentPropertyT, @Query(new ZodPipe(SalesQuery)) query: Body<typeof SalesQuery>) {
     return this.bills.reprints(p.id, query.from, query.to, query.outlet);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Printers, the POS bridge and print alerts (INT-04; Kahama meeting item 2.4)
+// ---------------------------------------------------------------------------
+@Controller('properties/:propertyCode/pos')
+@PropertyScoped()
+export class PosPrintingController {
+  constructor(private readonly printing: PosPrintingService) {}
+
+  @Get('printers')
+  @RequirePermission('pos.printer.manage')
+  printers(@CurrentProperty() p: CurrentPropertyT) {
+    return this.printing.printers(p.id);
+  }
+
+  @Post('printers')
+  @RequirePermission('pos.printer.manage')
+  @Idempotent()
+  createPrinter(@CurrentProperty() p: CurrentPropertyT, @Body(new ZodPipe(CreatePrinter)) b: Body<typeof CreatePrinter>) {
+    return this.printing.createPrinter(p.id, b);
+  }
+
+  @Patch('printers/:printerId')
+  @RequirePermission('pos.printer.manage')
+  updatePrinter(@CurrentProperty() p: CurrentPropertyT, @Param('printerId', ParseUUIDPipe) id: string, @Body(new ZodPipe(UpdatePrinter)) b: Body<typeof UpdatePrinter>) {
+    return this.printing.updatePrinter(p.id, id, b);
+  }
+
+  @Post('printers/:printerId/test')
+  @HttpCode(200)
+  @RequirePermission('pos.printer.manage')
+  @Idempotent()
+  test(@CurrentProperty() p: CurrentPropertyT, @Param('printerId', ParseUUIDPipe) id: string) {
+    return this.printing.testPrint(p.id, id);
+  }
+
+  @Put('printer-assignments')
+  @RequirePermission('pos.printer.manage')
+  assign(@CurrentProperty() p: CurrentPropertyT, @Body(new ZodPipe(AssignPrinter)) b: Body<typeof AssignPrinter>) {
+    return this.printing.assign(p.id, { station: b.station, outlet: b.outlet }, b.printerId);
+  }
+
+  @Post('bridge/pair')
+  @HttpCode(200)
+  @RequirePermission('pos.printer.manage')
+  @Idempotent()
+  pair(@CurrentProperty() p: CurrentPropertyT) {
+    return this.printing.pair(p.id);
+  }
+
+  @Post('bridge/unpair')
+  @HttpCode(200)
+  @RequirePermission('pos.printer.manage')
+  @Idempotent()
+  unpair(@CurrentProperty() p: CurrentPropertyT) {
+    return this.printing.unpair(p.id);
+  }
+
+  @Get('print-jobs')
+  @RequirePermission('pos.printer.manage')
+  jobs(@CurrentProperty() p: CurrentPropertyT, @Query(new ZodPipe(JobsQuery)) query: Body<typeof JobsQuery>) {
+    return this.printing.jobs(p.id, query.failed === 'true');
+  }
+
+  @Get('print-jobs/:jobId')
+  @RequirePermission('pos.print')
+  job(@CurrentProperty() p: CurrentPropertyT, @Param('jobId', ParseUUIDPipe) id: string) {
+    return this.printing.getJob(p.id, id);
+  }
+
+  /** Failed prints nobody has dealt with, for a waiter's outlet or a kitchen/bar station. */
+  @Get('print-alerts')
+  @RequirePermission('pos.print')
+  alerts(@CurrentProperty() p: CurrentPropertyT, @Query(new ZodPipe(AlertQuery)) query: Body<typeof AlertQuery>) {
+    return this.printing.alerts(p.id, query);
+  }
+
+  @Post('print-jobs/:jobId/acknowledge')
+  @HttpCode(200)
+  @RequirePermission('pos.print')
+  @Idempotent()
+  acknowledge(@CurrentProperty() p: CurrentPropertyT, @Param('jobId', ParseUUIDPipe) id: string) {
+    return this.printing.acknowledge(p.id, id);
+  }
+
+  @Post('print-jobs/:jobId/retry')
+  @HttpCode(200)
+  @RequirePermission('pos.print')
+  @Idempotent()
+  retry(@CurrentProperty() p: CurrentPropertyT, @Param('jobId', ParseUUIDPipe) id: string, @Body(new ZodPipe(RetryPrint)) b: Body<typeof RetryPrint>) {
+    return this.printing.retry(p.id, id, b.printerId);
+  }
+}
+
+/** The POS bridge at a property: claims print jobs and reports the result (outbound HTTPS only). */
+@Controller('pos-bridge')
+@PosBridgeOnly()
+export class PosBridgeController {
+  constructor(private readonly printing: PosPrintingService) {}
+
+  @Post('claim')
+  @HttpCode(200)
+  claim(@CurrentProperty() p: CurrentPropertyT, @Body(new ZodPipe(PosBridgeHello)) b: Body<typeof PosBridgeHello>) {
+    return this.printing.claim(p.id, b).then((r) => ({ property: p.code, ...r }));
+  }
+
+  @Post('jobs/:id/result')
+  @HttpCode(200)
+  result(@CurrentProperty() p: CurrentPropertyT, @Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(PosBridgeResult)) b: Body<typeof PosBridgeResult>) {
+    return this.printing.complete(p.id, id, b.bridgeId, { outcome: b.outcome, error: b.error });
   }
 }

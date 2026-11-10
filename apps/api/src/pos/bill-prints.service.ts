@@ -7,6 +7,7 @@ import { ApprovalInputT, conflict } from '../frontoffice/common';
 import { FoliosService } from '../frontoffice/folios.service';
 import { PosChecksService } from './checks.service';
 import { actorId, event } from './common';
+import { PosPrintingService } from './printing.service';
 import { renderCheck } from './render';
 
 export interface BillPrintInput {
@@ -34,6 +35,7 @@ export class PosBillPrintsService {
     private readonly checks: PosChecksService,
     private readonly approvals: ApprovalsService,
     private readonly folios: FoliosService,
+    private readonly printing: PosPrintingService,
   ) {}
 
   async print(propertyId: string, checkId: string, input: BillPrintInput) {
@@ -87,7 +89,9 @@ export class PosBillPrintsService {
         printNo, changed, reason: approvalId ? input.reason : null,
       });
       const view = await this.checks.view(q, propertyId, check.id);
-      return { kind, printNo, changed, html: renderCheck(view, header, { printNo, changed }) };
+      // On the outlet's receipt printer when it has one (INT-04); the tablet prints the html otherwise.
+      const job = await this.printing.queueCheck(q, propertyId, view, header, { kind, printNo, changed });
+      return { kind, printNo, changed, html: renderCheck(view, header, { printNo, changed }), printer: job?.printer ?? null, printJobId: job?.id ?? null };
     });
   }
 

@@ -16,6 +16,7 @@ import { NumberingService } from '../numbering/numbering.service';
 import { actorId, event, inclusiveTaxes, localNow, outletByCode, outletById, PosOutlet } from './common';
 import { PosDaysService } from './days.service';
 import { PosMenuService } from './menu.service';
+import { PosPrintingService } from './printing.service';
 
 export interface LockedCheck {
   id: string;
@@ -98,6 +99,7 @@ export class PosChecksService {
     private readonly numbering: NumberingService,
     private readonly approvals: ApprovalsService,
     private readonly audit: AuditService,
+    private readonly printing: PosPrintingService,
   ) {}
 
   async lock(q: Queryable, propertyId: string, checkId: string, requireOpen = true): Promise<LockedCheck> {
@@ -410,7 +412,10 @@ export class PosChecksService {
   }
 
   /** Sends every draft line: kitchen and bar items as tickets to their stations; items with no station are handed over at once. */
-  async sendDrafts(q: Queryable, check: LockedCheck): Promise<{ sent: number; tickets: Array<{ id: string; number: string; route: string; station: string | null }> }> {
+  async sendDrafts(
+    q: Queryable,
+    check: LockedCheck,
+  ): Promise<{ sent: number; tickets: Array<{ id: string; number: string; route: string; station: string | null; printer: string | null; printJobId: string | null }> }> {
     const drafts = await this.lines(q, check.id, `status = 'draft'`);
     if (!drafts.length) return { sent: 0, tickets: [] };
     const tickets = [];
@@ -470,7 +475,9 @@ export class PosChecksService {
       [check.propertyId, number, check.id, head.stationId, route, kind, JSON.stringify(content), actorId()],
     );
     await q.query('INSERT INTO pos_ticket_prints (ticket_id, property_id, print_no, printed_by) VALUES ($1, $2, 1, $3)', [rows[0].id, check.propertyId, actorId()]);
-    return { id: rows[0].id, number, route, station: head.stationCode };
+    // Printed by the property's POS bridge when the station has a printer (INT-04).
+    const job = await this.printing.queueTicket(q, check.propertyId, rows[0].id, 1);
+    return { id: rows[0].id, number, route, station: head.stationCode, printer: job?.printer ?? null, printJobId: job?.id ?? null };
   }
 
   /** Open tickets for a station (POS-07; the full kitchen display is POS-14, P2). */
@@ -481,6 +488,9 @@ export class PosChecksService {
       const { rows } = await q.query(
         `SELECT t.id, t.number, t.kind, t.status, t.route, t.content, t.created_at AS "createdAt", t.updated_at AS "updatedAt",
                 (SELECT max(print_no) FROM pos_ticket_prints p WHERE p.ticket_id = t.id) AS prints,
+                (SELECT json_build_object('id', j.id, 'status', j.status, 'error', j.last_error, 'printer', pp.name)
+                   FROM print_jobs j JOIN pos_printers pp ON pp.id = j.printer_id
+                  WHERE j.ticket_id = t.id ORDER BY j.created_at DESC LIMIT 1) AS "print",
                 coalesce((SELECT json_agg(json_build_object('id', l.id, 'status', l.status)) FROM pos_check_lines l WHERE l.ticket_id = t.id), '[]') AS "lineStatuses"
            FROM pos_tickets t
           WHERE t.station_id = $1 AND ($2 OR t.status <> 'done') AND t.created_at > now() - interval '2 days'
@@ -529,7 +539,8 @@ export class PosChecksService {
         ticketId, propertyId, n.next, reason, actorId(),
       ]);
       await event(q, propertyId, rows[0].checkId, 'ticket_reprinted', { ticket: rows[0].number, printNo: n.next, reason });
-      return this.ticket(q, propertyId, ticketId, n.next);
+      const job = await this.printing.queueTicket(q, propertyId, ticketId, n.next);
+      return { ...(await this.ticket(q, propertyId, ticketId, n.next)), printer: job?.printer ?? null, printJobId: job?.id ?? null };
     });
   }
 

@@ -87,6 +87,9 @@ export const PERMISSIONS = {
   'pos.menu.manage': ['owner', 'admin', 'area_manager', 'manager'],
   // POS-12: floor and kitchen staff mark items unavailable ("86") as it happens.
   'pos.availability': ['owner', 'area_manager', 'manager', 'cashier', 'waiter', 'bartender', 'kitchen'],
+  // Network printing (INT-04): see failed prints and send them again; set up printers and the POS bridge.
+  'pos.print': ['owner', 'area_manager', 'manager', 'cashier', 'waiter', 'bartender', 'kitchen'],
+  'pos.printer.manage': ['owner', 'admin', 'area_manager', 'manager'],
   // Registers shared POS tablets for PIN sign-in and clears a user's PIN.
   'pos.device.manage': ['owner', 'admin', 'area_manager', 'manager'],
   'pos.report': ['owner', 'admin', 'area_manager', 'group_accounts', 'manager', 'accountant'],

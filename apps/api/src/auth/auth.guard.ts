@@ -15,7 +15,7 @@ import { APP_CONFIG, AppConfig } from '../config';
 import { DbService } from '../db/db.service';
 import { requestContext, SYSTEM_SCOPE } from '../db/request-context';
 import { AuthService } from './auth.service';
-import { BRIDGE_ONLY, IS_PUBLIC, PERMISSION, PROPERTY_PARAM, WORKER_ONLY } from './decorators';
+import { BRIDGE_ONLY, IS_PUBLIC, PERMISSION, POS_BRIDGE_ONLY, PROPERTY_PARAM, WORKER_ONLY } from './decorators';
 
 function sha256(value: string): Buffer {
   return createHash('sha256').update(value).digest();
@@ -73,6 +73,25 @@ export class AuthGuard implements CanActivate {
         SYSTEM_SCOPE,
       );
       if (!rows[0]) throw new UnauthorizedException('Invalid door-lock bridge token');
+      store.bridge = true;
+      store.property = { id: rows[0].id, code: rows[0].code, businessDate: rows[0].business_date };
+      store.scope = { all: false, propertyIds: [rows[0].id] };
+      return true;
+    }
+
+    if (this.meta<boolean>(POS_BRIDGE_ONLY, ctx)) {
+      // POS bridge tokens are random 256-bit values; only their SHA-256 is stored.
+      const { rows } = await this.db.tx(
+        (q) =>
+          q.query<{ id: string; code: string; business_date: string }>(
+            `SELECT p.id, p.code, p.current_business_date::text AS business_date
+               FROM pos_bridges b JOIN properties p ON p.id = b.property_id
+              WHERE b.token_hash = $1 AND p.is_active`,
+            [sha256(token).toString('hex')],
+          ),
+        SYSTEM_SCOPE,
+      );
+      if (!rows[0]) throw new UnauthorizedException('Invalid POS bridge token');
       store.bridge = true;
       store.property = { id: rows[0].id, code: rows[0].code, businessDate: rows[0].business_date };
       store.scope = { all: false, propertyIds: [rows[0].id] };
