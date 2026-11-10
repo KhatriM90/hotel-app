@@ -199,6 +199,18 @@ As `k1.waiter` on the tablet:
 
 - [ ] On a slow connection (browser dev tools, "Slow 3G"), tap **Send order** or **PAY** several times quickly. The button shows a spinner and the other order buttons dim; further taps are ignored until the server answers, so nothing is sent or paid twice.
 
+## 20. Printing through the POS bridge (INT-04; meeting item 2.4)
+
+Set up as in [printing.md](printing.md), "Trying it without hardware": a printer for the kitchen station, a second one as its backup, a receipt printer for the outlet, and the bridge running in mock mode.
+
+- [ ] **Printers** shows the print PC as Online. **Test print** makes a job that turns Printed and a file in the bridge's outbox.
+- [ ] Send an order as a waiter. The message says which printer it went to; the station screen shows "Printed on …" on the ticket.
+- [ ] Restart the bridge with `MOCK_FAIL="Paper out"` and send another order. After three tries (about 20 seconds) the ticket goes to the backup printer, and a red "Not printed" alert with a beep shows on the waiter tablet and on the station screen. **Print again** sends it again; **Done** clears the alert.
+- [ ] Stop the bridge and send an order. Within about a minute the alert says the bridge is not running.
+- [ ] Print a bill: with a receipt printer set for the outlet, the tablet says "Bill sent to …" instead of opening the browser print window. Reprint rules (section 17) still apply.
+- [ ] Reprint a ticket on the station screen: it goes to the printer with a REPRINT banner.
+- [ ] As a waiter, the Printers page is not in the back office menu; the API answers 403.
+
 ---
 
 ## What is not in this module
@@ -207,7 +219,7 @@ See `docs/requirements-traceability.md`, "POS PR", for the full list. In short:
 
 - **eTIMS** (INT-02): receipts say "eTIMS receipt not yet issued"; fiscal submission is a separate piece of work.
 - **M-PESA STK push** and card terminals (INT-01, INT-03): the cashier types the M-PESA reference; a pending payment can be confirmed or failed by hand.
-- **Network ticket printers** (INT-04): tickets and bills print from the tablet's browser. Kitchen screens refresh every 10 seconds.
+- **Printing without internet** (INT-04): tickets and bills go to the printers through the POS bridge (section 20), which needs the property's internet connection. Kitchen screens refresh every 10 seconds.
 - **SAP credit memo for refunds**: a refund is recorded and reduces the cash shift, but no credit memo is queued to SAP yet.
 - **SAP till and clearing accounts per property** (SAP-16) are still to be agreed with accounts; the walk-in customer code `C-WALKIN` is a placeholder.
 - **Menus, prices, alcohol hours and house-account limits are test data** until the client sends theirs.

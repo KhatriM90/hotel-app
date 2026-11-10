@@ -62,6 +62,10 @@ describe('POS printing through the property bridge (INT-04)', () => {
          JOIN menu_categories mc ON mc.id = i.category_id
          JOIN outlet_station_routes r ON r.outlet_id = o.id JOIN pos_stations s ON s.id = r.station_id
         WHERE o.property_id = (SELECT id FROM properties WHERE code = 'KM') AND o.pos_enabled AND o.is_active
+          -- Not the first such outlet: the tablets suite trades there and closes its day when it ends.
+          AND o.code > (SELECT min(o2.code) FROM outlets o2 JOIN outlet_menu_prices mp2 ON mp2.outlet_id = o2.id
+                          JOIN menu_items i2 ON i2.id = mp2.item_id AND i2.code = 'SD-WATER'
+                         WHERE o2.property_id = o.property_id AND o2.pos_enabled AND o2.is_active)
         ORDER BY o.code, r.route = 'bar' DESC LIMIT 1`,
     );
     outlet = rows[0].outlet;

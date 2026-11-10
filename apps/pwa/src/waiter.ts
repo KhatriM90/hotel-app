@@ -7,6 +7,7 @@
  * and room charges always need the server's answer.
  */
 import { api, ApiError, newKey, OfflineError } from './api';
+import { PrintAlerts } from './print-alerts';
 import { OfflineQueue, type QueuedAction } from './queue';
 import { addMoney, confirmBox, esc, kes, modal, printHtml, showError, toast, withSignOff } from './ui';
 
@@ -102,6 +103,19 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const LOCAL_CHECKS = 'yeastay.pwa.localChecks';
 
+export interface SentTicket {
+  number: string;
+  station: string | null;
+  printer: string | null;
+}
+
+/** "Sent: Main kitchen printer, Bar printer"; a station without a printer shows on its ticket screen only. */
+export function sentMessage(tickets: SentTicket[]): string {
+  if (!tickets.length) return 'Sent';
+  const where = tickets.map((t) => t.printer ?? (t.station ? `${t.station} screen` : 'no printer'));
+  return `Sent: ${[...new Set(where)].join(', ')}`;
+}
+
 export class WaiterApp {
   private menu: Menu | null = null;
   private checks: CheckSummary[] = [];
@@ -112,6 +126,7 @@ export class WaiterApp {
   private selected = new Set<string>();
   private readonly queue = new OfflineQueue();
   private online = true;
+  private alerts: PrintAlerts | null = null;
 
   constructor(
     private readonly root: HTMLElement,
@@ -132,6 +147,12 @@ export class WaiterApp {
     return `/properties/${this.property}/pos`;
   }
 
+  /** Stops the failed-print alerts when leaving the outlet. */
+  stop(): void {
+    this.alerts?.stop();
+    this.alerts = null;
+  }
+
   setOnline(online: boolean): void {
     const was = this.online;
     this.online = online;
@@ -140,6 +161,8 @@ export class WaiterApp {
   }
 
   async start(): Promise<void> {
+    this.alerts = new PrintAlerts(this.property, { outlet: this.outletCode });
+    this.alerts.start();
     await this.loadMenu();
     await this.flush();
     await this.showFloor();
@@ -294,7 +317,10 @@ export class WaiterApp {
         const key = b.dataset.nav!;
         if (key === active) return;
         if (key === 'shift') return void this.shiftDialog().catch(showError);
-        if (key === 'exit') return void this.leave(() => this.onExit());
+        if (key === 'exit') return void this.leave(() => {
+          this.stop();
+          this.onExit();
+        });
         if (key === 'tables' || key === 'orders') return void this.leave(() => this.showFloor(key));
       }),
     );
@@ -669,9 +695,11 @@ export class WaiterApp {
         toast('Offline: order saved; it goes to the kitchen and bar when the connection returns', 'info');
       } else {
         try {
-          const res = await api.post<Check & { tickets: Array<{ number: string; station: string | null }> }>(`${this.pos}/checks/${c.id}/send`);
+          const res = await api.post<Check & { tickets: SentTicket[] }>(`${this.pos}/checks/${c.id}/send`);
           this.check = res;
-          toast(res.tickets.length ? `Sent: ${res.tickets.map((t) => t.station ?? 'no printer').join(', ')}` : 'Sent', 'ok');
+          toast(sentMessage(res.tickets), 'ok');
+          // A failed print shows as an alert within a few seconds of the bridge giving up.
+          setTimeout(() => void this.alerts?.refresh(), 20_000);
           this.renderCheck();
           this.afterSale();
           return;
@@ -769,7 +797,7 @@ export class WaiterApp {
    */
   private async printBill() {
     const path = `${this.pos}/checks/${this.check!.id}/print`;
-    type Printed = { html: string; printNo: number; changed: boolean; kind: string };
+    type Printed = { html: string; printNo: number; changed: boolean; kind: string; printer: string | null };
     let out: Printed;
     try {
       out = await api.post<Printed>(path, {});
@@ -787,8 +815,12 @@ export class WaiterApp {
       if (!res) return;
       out = await api.post<Printed>(path, { reason: res.reason, ...(self ? {} : { approval: { username: res.username, password: res.password } }) });
     }
-    printHtml(out.html);
-    if (out.printNo > 1) toast(out.changed ? 'Updated bill printed' : 'Copy printed and logged', 'info');
+    // On the outlet's receipt printer when it has one (INT-04); otherwise the tablet prints it.
+    if (out.printer) toast(`${out.kind === 'receipt' ? 'Receipt' : 'Bill'} sent to ${out.printer}${out.printNo > 1 ? (out.changed ? ' (updated bill)' : ' (copy, logged)') : ''}`, 'ok');
+    else {
+      printHtml(out.html);
+      if (out.printNo > 1) toast(out.changed ? 'Updated bill printed' : 'Copy printed and logged', 'info');
+    }
   }
 
   /**

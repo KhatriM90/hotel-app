@@ -5,6 +5,7 @@
  * numbered and says REPRINT on paper).
  */
 import { api, OfflineError } from './api';
+import { PrintAlerts } from './print-alerts';
 import { esc, modal, printHtml, showError, toast } from './ui';
 
 interface Ticket {
@@ -14,6 +15,8 @@ interface Ticket {
   status: 'new' | 'preparing' | 'ready' | 'done';
   createdAt: string;
   prints: number;
+  /** The latest print job for this ticket on a printer (INT-04), or null when the station has no printer. */
+  print: { id: string; status: 'queued' | 'printing' | 'printed' | 'failed' | 'cancelled'; error: string | null; printer: string } | null;
   content: {
     outlet: { name: string };
     checkNumber: string;
@@ -36,6 +39,7 @@ const NEXT: Record<string, { status: string; label: string } | undefined> = {
 export class StationApp {
   private timer: ReturnType<typeof setInterval> | null = null;
   private seen = new Set<string>();
+  private alerts: PrintAlerts | null = null;
 
   constructor(
     private readonly root: HTMLElement,
@@ -49,12 +53,16 @@ export class StationApp {
   }
 
   async start(): Promise<void> {
+    this.alerts = new PrintAlerts(this.property, { station: this.station.code });
+    this.alerts.start();
     await this.refresh();
     this.timer = setInterval(() => void this.refresh(), 10_000);
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    this.alerts?.stop();
+    this.alerts = null;
   }
 
   private async refresh(): Promise<void> {
@@ -91,6 +99,7 @@ export class StationApp {
                 <span>${mins} min</span>
               </header>
               <p class="muted">${esc(c.outlet.name)} · ${esc(c.server)} · ${esc(t.number)}${t.prints > 1 ? ` · printed ${t.prints}×` : ''}</p>
+              ${printBadge(t.print)}
               ${t.kind === 'cancellation' ? `<p class="cancel">CANCEL${c.reason ? `: ${esc(c.reason)}` : ''}</p>` : ''}
               <ul>${c.lines
                 .map((l) => `<li><b>${Number(l.quantity)}×</b> ${esc(l.name)}${l.modifiers.length ? `<small>${l.modifiers.map(esc).join(', ')}</small>` : ''}${l.notes ? `<small class="note">${esc(l.notes)}</small>` : ''}</li>`)
@@ -132,15 +141,28 @@ export class StationApp {
         const res = await modal('Reprint ticket', '<label>Reason<input name="reason" required minlength="3" maxlength="500" placeholder="e.g. printer jam"></label>', { submit: 'Reprint' });
         if (!res) return;
         try {
-          await api.post(`${this.pos}/tickets/${b.dataset.reprint}/reprint`, { reason: res.reason });
-          printHtml(await api.html(`${this.pos}/tickets/${b.dataset.reprint}/print`));
-          toast('Reprinted', 'ok');
+          const out = await api.post<{ printer: string | null }>(`${this.pos}/tickets/${b.dataset.reprint}/reprint`, { reason: res.reason });
+          if (out.printer) toast(`Reprint sent to ${out.printer}`, 'ok');
+          else {
+            printHtml(await api.html(`${this.pos}/tickets/${b.dataset.reprint}/print`));
+            toast('Reprinted', 'ok');
+          }
+          await this.refresh();
         } catch (err) {
           showError(err);
         }
       }),
     );
   }
+}
+
+/** Printed / waiting / not printed, on each ticket card. */
+export function printBadge(p: Ticket['print']): string {
+  if (!p) return '';
+  if (p.status === 'printed') return `<span class="pstat ok">Printed on ${esc(p.printer)}</span>`;
+  if (p.status === 'failed') return `<span class="pstat bad" title="${esc(p.error ?? '')}">Not printed on ${esc(p.printer)}</span>`;
+  if (p.status === 'cancelled') return '';
+  return `<span class="pstat wait">Printing on ${esc(p.printer)}…</span>`;
 }
 
 function beep(): void {

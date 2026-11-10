@@ -12,6 +12,7 @@ import { RequestsPage } from './frontdesk/Requests';
 import { NewReservationPage, ReservationDetailPage, ReservationsPage } from './frontdesk/Reservations';
 import { RoomDashboardPage } from './frontdesk/RoomDashboard';
 import { RatesPage, RoomsPage } from './frontdesk/Rooms';
+import { PosPrintersPage } from './pos/Printers';
 import { PosDaysPage, PosMenuPage, PosReprintsPage, PosSalesPage, PosSettingsPage, PosShiftsPage, PosTabletsPage } from './pos/Pos';
 import { ReportsPage } from './reports/Catalog';
 import { FlashReportPage, HotelReportPage } from './reports/Reports';
@@ -30,7 +31,7 @@ function BusinessDateBadge({ property }: { property: Property }) {
 type Page =
   | 'desk' | 'room-dashboard' | 'calendar' | 'reservations' | 'new-reservation' | 'reservation' | 'folio'
   | 'guests' | 'guest' | 'agents' | 'requests' | 'rooms' | 'rates' | 'door-locks'
-  | 'pos-days' | 'pos-sales' | 'pos-shifts' | 'pos-reprints' | 'pos-menu' | 'pos-tablets' | 'pos-settings'
+  | 'pos-days' | 'pos-sales' | 'pos-shifts' | 'pos-reprints' | 'pos-menu' | 'pos-tablets' | 'pos-printers' | 'pos-settings'
   | 'reports' | 'report-flash' | 'report-hotel'
   | 'overview' | 'outlets' | 'integration';
 
@@ -55,6 +56,7 @@ const NAV: Array<[Page, string, (Permission | Permission[])?]> = [
   ['pos-reprints', 'Bill reprints', 'pos.report'],
   ['pos-menu', 'Menus and prices', 'pos.menu.read'],
   ['pos-tablets', 'Tablets and PINs', 'pos.device.manage'],
+  ['pos-printers', 'Printers', 'pos.printer.manage'],
   ['pos-settings', 'Business day and POS', 'pos.report'],
   ['overview', 'Properties'],
   ['outlets', 'Outlets'],
@@ -300,6 +302,7 @@ export function App() {
               {page === 'pos-reprints' && <PosReprintsPage key={current} />}
               {page === 'pos-menu' && <PosMenuPage key={current} />}
               {page === 'pos-tablets' && <PosTabletsPage key={current} />}
+              {page === 'pos-printers' && <PosPrintersPage key={current} />}
               {page === 'pos-settings' && <PosSettingsPage key={current} />}
             </SessionContext.Provider>
           )}

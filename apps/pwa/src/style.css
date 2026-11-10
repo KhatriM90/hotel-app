@@ -265,3 +265,15 @@ button.working::after { content: ''; position: absolute; inset: 0; margin: auto;
 .idle-banner { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 20; background: var(--ys-amber); color: var(--ys-night);
   font-weight: 700; padding: 14px 22px; border-radius: 14px; box-shadow: 0 8px 24px rgb(0 0 0 / 40%); max-width: calc(100vw - 32px); }
 label.check { display: flex; gap: 10px; align-items: center; }
+
+/* Failed-print alerts (INT-04) */
+.print-alerts { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); width: min(720px, calc(100vw - 16px)); z-index: 19; display: grid; gap: 6px; }
+.print-alert { background: var(--danger); color: #fff; border-radius: 14px; padding: 10px 14px; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; box-shadow: 0 6px 20px rgb(0 0 0 / 40%); }
+.print-alert p { margin: 0; flex: 1 1 260px; font-size: 15px; }
+.print-alert div { display: flex; gap: 6px; }
+.print-alert button.danger { background: #fff; color: var(--danger); border-color: #fff; font-weight: 700; }
+.print-alert button.ghost { color: #fff; border-color: rgb(255 255 255 / 60%); }
+.ticket .pstat { font-size: 12px; font-weight: 700; border-radius: 8px; padding: 2px 8px; justify-self: start; }
+.ticket .pstat.ok { background: #e3f4ea; color: #1d6b3d; }
+.ticket .pstat.wait { background: #fff2d9; color: #8a5a00; }
+.ticket .pstat.bad { background: #fde3df; color: #a3271a; }

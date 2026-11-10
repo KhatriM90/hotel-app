@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evenShare, tileClass } from './waiter';
+import { evenShare, sentMessage, tileClass } from './waiter';
 
 describe('split evenly', () => {
   it('gives each person a share rounded down to the cent', () => {
@@ -16,5 +16,16 @@ describe('tile colours', () => {
     expect(tileClass('MAINS')).toBe('t-food');
     expect(tileClass('NEWCAT')).toBe(tileClass('NEWCAT'));
     expect(tileClass('NEWCAT')).toMatch(/^t-/);
+  });
+});
+
+describe('send message', () => {
+  it('names the printers the tickets went to, once each', () => {
+    expect(sentMessage([])).toBe('Sent');
+    expect(sentMessage([
+      { number: 'T1', station: 'KIT', printer: 'Kitchen Epson' },
+      { number: 'T2', station: 'BAR', printer: 'Kitchen Epson' },
+      { number: 'T3', station: 'GRILL', printer: null },
+    ])).toBe('Sent: Kitchen Epson, GRILL screen');
   });
 });
