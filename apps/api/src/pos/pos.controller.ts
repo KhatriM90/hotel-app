@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
-import { HOUSE_ACCOUNT_KINDS, POS_TENDERS, SERVICE_TYPES } from '@hotel/shared';
+import { HOUSE_ACCOUNT_KINDS, KRA_PIN_PATTERN, POS_TENDERS, SERVICE_TYPES } from '@hotel/shared';
 import { z } from 'zod';
 import { CurrentProperty, PosBridgeOnly, PropertyScoped, RequirePermission } from '../auth/decorators';
 import { ZodPipe } from '../common/zod.pipe';
@@ -7,6 +7,7 @@ import { Amount, ApprovalInput, CurrentPropertyT, IsoDate, Quantity, Reason, Tim
 import { FoliosService } from '../frontoffice/folios.service';
 import { Idempotent } from '../idempotency/idempotency';
 import { PosChecksService } from './checks.service';
+import { PosCustomersService } from './customers.service';
 import { PosDaysService } from './days.service';
 import { PosMenuService } from './menu.service';
 import { renderDayReport, renderTicket } from './render';
@@ -56,6 +57,18 @@ const AddLines = z.object({
 });
 const Discount = z.object({ lineIds: z.array(Uuid).max(100).optional(), percent: Percent, reason: Reason, approval: ApprovalInput });
 const CancelLines = z.object({ lineIds: z.array(Uuid).min(1).max(100), reason: Reason, approval: ApprovalInput });
+// Customer KRA PIN on the bill (POS demo, 25 Nov 2026, points 15 to 17).
+const CustomerPin = z.string().trim().toUpperCase().regex(KRA_PIN_PATTERN, 'KRA PIN looks like A012345678Z: a letter, nine digits and a letter');
+const CustomerPhone = z.string().trim().regex(/^\+?[0-9 ()-]{7,20}$/, 'phone number');
+const CustomerName = z.string().trim().min(2).max(120);
+const CheckCustomer = z.union([
+  z.object({ customerId: Uuid }).strict(),
+  z.object({ name: CustomerName, kraPin: CustomerPin.nullish(), phone: CustomerPhone.nullish(), save: z.boolean().optional() }).strict(),
+  z.object({ clear: z.literal(true) }).strict(),
+]);
+const CustomerUpdate = z
+  .object({ name: CustomerName.optional(), kraPin: CustomerPin.nullish(), phone: CustomerPhone.nullish(), isActive: z.boolean().optional() })
+  .strict();
 const Transfer = z
   .object({
     tableId: Uuid.nullish(), waiterId: Uuid.optional(), tabName: z.string().trim().max(60).nullish(), covers: z.number().int().min(0).max(200).optional(),
@@ -184,6 +197,7 @@ export class PosController {
     private readonly checks: PosChecksService,
     private readonly settlement: PosSettlementService,
     private readonly bills: PosBillPrintsService,
+    private readonly posCustomers: PosCustomersService,
   ) {}
 
   @Get('outlets')
@@ -275,6 +289,26 @@ export class PosController {
   @Idempotent()
   cancelLines(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string, @Body(new ZodPipe(CancelLines)) b: Body<typeof CancelLines>) {
     return this.checks.cancelLines(p.id, id, b);
+  }
+
+  @Get('customers')
+  @RequirePermission('pos.use')
+  searchCustomers(@Query('q') text?: string) {
+    return this.posCustomers.search(text ?? '');
+  }
+
+  @Put('customers/:customerId')
+  @RequirePermission('pos.menu.manage')
+  updateCustomer(@Param('customerId', ParseUUIDPipe) id: string, @Body(new ZodPipe(CustomerUpdate)) b: Body<typeof CustomerUpdate>) {
+    return this.posCustomers.update(id, b);
+  }
+
+  @Post('checks/:checkId/customer')
+  @HttpCode(200)
+  @RequirePermission('pos.use')
+  @Idempotent()
+  checkCustomer(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string, @Body(new ZodPipe(CheckCustomer)) b: Body<typeof CheckCustomer>) {
+    return this.posCustomers.setOnCheck(p.id, id, b);
   }
 
   @Post('checks/:checkId/transfer')

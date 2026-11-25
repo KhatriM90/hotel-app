@@ -162,6 +162,8 @@ export class PosChecksService {
               CASE WHEN g.id IS NULL THEN NULL ELSE g.first_name || ' ' || g.last_name END AS "guestName",
               c.notes, c.opened_at AS "openedAt", c.closed_at AS "closedAt", c.merged_into_id AS "mergedIntoId", c.void_reason AS "voidReason",
               c.device_id AS "deviceId",
+              CASE WHEN c.customer_name IS NULL THEN NULL
+                   ELSE json_build_object('id', c.customer_id, 'name', c.customer_name, 'kraPin', c.customer_kra_pin, 'phone', c.customer_phone) END AS customer,
               json_build_object('total', tot.total::text, 'tax', tot.tax::text, 'discounts', tot.discounts::text, 'paid', tot.paid::text,
                                 'pending', tot.pending::text, 'roomCharged', tot.room_charged::text, 'houseCharged', tot.house_charged::text,
                                 'refunded', tot.refunded::text, 'balance', tot.balance::text) AS totals

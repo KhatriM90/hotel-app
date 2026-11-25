@@ -182,6 +182,10 @@ export function escposCheck(check: Json, property: Json, paperMm: number, print?
   p.line(`Check ${check.number}${check.tableCode ? ` - Table ${check.tableCode}` : ''}${check.tabName ? ` - ${check.tabName}` : ''}`);
   p.line(`${label(check.serviceType)}${check.roomNumber ? ` - Room ${check.roomNumber}` : ''} - Covers ${check.covers}`);
   p.line(`Server ${check.waiter} - ${check.businessDate}`);
+  if (check.customer) {
+    p.para(`Customer ${check.customer.name}`);
+    if (check.customer.kraPin) p.bold(true).line(`Customer KRA PIN ${check.customer.kraPin}`).bold(false);
+  }
   p.rule();
   const live = ((check.lines ?? []) as Json[]).filter((l) => l.status !== 'cancelled' && l.status !== 'wasted');
   if (!live.length) p.line('No items');

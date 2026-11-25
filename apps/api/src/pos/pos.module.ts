@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { FrontOfficeModule } from '../frontoffice/frontoffice.module';
 import { IntegrationModule } from '../integration/integration.module';
 import { PosChecksService } from './checks.service';
+import { PosCustomersService } from './customers.service';
 import { PosDaysService } from './days.service';
 import { PosMenuService } from './menu.service';
 import { PosBillPrintsService } from './bill-prints.service';
@@ -17,7 +18,7 @@ import { PosShiftsService } from './shifts.service';
 @Module({
   imports: [FrontOfficeModule, IntegrationModule],
   controllers: [PosController, PosStationsController, PosCashController, PosAdminController, PosMenuController, PosDevicesController, PosPrintingController, PosBridgeController],
-  providers: [PosReportsService, PosDaysService, PosMenuService, PosChecksService, PosSettlementService, PosShiftsService, PosSettingsService, PosBillPrintsService, PosDevicesService, PosPrintingService],
+  providers: [PosReportsService, PosDaysService, PosMenuService, PosChecksService, PosSettlementService, PosShiftsService, PosSettingsService, PosBillPrintsService, PosDevicesService, PosPrintingService, PosCustomersService],
   exports: [PosReportsService, PosDaysService],
 })
 export class PosModule {}

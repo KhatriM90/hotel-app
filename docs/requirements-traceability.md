@@ -259,6 +259,6 @@ From the notes taken at the POS demo on 25 Nov 2026 (24 points). Triage with Man
 | 8, 13 Approval for room charges | Done | `approve.room_charge` on every room charge (threshold to confirm). |
 | 9 Move a wrong room charge | Done | `POST /pos/checks/:id/room-charge/move`. |
 | 14 Paid today list | Done | Tablet floor screen. |
-| 15, 16, 17 Customer KRA PIN | In progress | Next change. |
+| 15, 16, 17 Customer KRA PIN, saved customers, PIN on the bill | Done | The tablet asks once per check before the bill or payment; `pos_customers` (shared by the group, unique PIN) found by name, phone or PIN; the check keeps a copy of name, PIN and phone (`POST /pos/checks/:id/customer`); printed on the bill and the Epson slip. The PIN goes on the fiscal receipt with TIMS (INT-02). No back office customer screen yet (managers correct by API). |
 | 4, 5, 18, 20, 23, 24 | Waiting on decisions | See the doc. |
 

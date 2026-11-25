@@ -223,6 +223,16 @@ Set up as in [printing.md](printing.md), "Trying it without hardware": a printer
 - [ ] **Ready alert.** Leave the waiter on the floor screen. Mark an item Ready on the station screen: within 15 seconds the tablet beeps and says "Ready to pick up: …". Other waiters' checks do not alert.
 - [ ] **Paid today.** The **Paid today** button lists today's closed checks with how they were settled; tapping one opens it (for a bill copy or a room move).
 
+## 22. Customer KRA PIN on the bill (POS demo points 15 to 17)
+
+- [ ] Open a check, add items and tap **Print bill** (or **PAY**). The tablet first asks "KRA PIN on the bill?". Choose **No, continue without**: it prints or pays as before, and does not ask again for that check.
+- [ ] On a new check, at the question choose **New customer**, type a name, a KRA PIN such as `P051234567Q` and a phone, leave **Save for next time** ticked. The bill shows "Customer … · KRA PIN …" under the server line, on paper and on the Epson slip. A PIN in the wrong shape is refused.
+- [ ] Adding the customer after the bill was printed makes the next print an updated bill: no reprint approval.
+- [ ] On another check (any property), **Split, merge and more** → **Customer KRA PIN**, and search by part of the name, the phone (0722 … or +254 722 …) or the start of the PIN. Pick the customer: their details go on the bill.
+- [ ] Typing the same PIN again as a new customer updates the saved one rather than adding a second.
+- [ ] With **Save for next time** unticked, the details go on this bill only and are not found by search.
+- [ ] A manager corrects a saved customer with `PUT /api/properties/K1/pos/customers/:id`; a waiter gets 403. Bills already made keep the details they had.
+
 ---
 
 ## What is not in this module

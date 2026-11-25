@@ -705,6 +705,67 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
   });
 
   // ---------------------------------------------------------------------------
+  describe('customer KRA PIN on the bill (POS demo 25 Nov, points 15 to 17)', () => {
+    it('puts the customer on the bill, saves them and finds them again by name, phone or PIN', async () => {
+      const check = await openCheck('k1.waiter', 'K1-COCKTAIL');
+      await add('k1.waiter', check.id, [{ portionId: (await item('K1-COCKTAIL', 'SD-SODA')).portionId, quantity: '1' }]).expect(200);
+      const first = await api('k1.waiter').post(`${POS}/checks/${check.id}/print`).expect(200);
+      expect(first.body.html).not.toContain('Customer');
+
+      const bad = await api('k1.waiter').post(`${POS}/checks/${check.id}/customer`, { name: 'Acme Traders', kraPin: '12345' }).expect(400);
+      expect(JSON.stringify(bad.body)).toContain('KRA PIN');
+
+      const set = await api('k1.waiter')
+        .post(`${POS}/checks/${check.id}/customer`, { name: 'Acme Traders Ltd', kraPin: 'p051234567q', phone: '0722 123456', save: true })
+        .expect(200);
+      expect(set.body.customer).toMatchObject({ name: 'Acme Traders Ltd', kraPin: 'P051234567Q', phone: '+254722123456' });
+      const customerId = set.body.customer.id;
+      expect(customerId).toBeTruthy();
+
+      // Adding the customer makes it an updated bill: no reprint approval.
+      const second = await api('k1.waiter').post(`${POS}/checks/${check.id}/print`).expect(200);
+      expect(second.body.changed).toBe(true);
+      expect(second.body.html).toContain('KRA PIN P051234567Q');
+      expect(second.body.html).toContain('Customer Acme Traders Ltd');
+
+      for (const q of ['acme', 'P05123', '0722123456', '722123']) {
+        const found = await api('k1.waiter').get(`${POS}/customers?q=${encodeURIComponent(q)}`).expect(200);
+        expect(found.body.map((c: { id: string }) => c.id)).toContain(customerId);
+      }
+      expect((await api('k1.waiter').get(`${POS}/customers?q=a`).expect(200)).body).toEqual([]);
+
+      // Saved customers are shared by the group: found at Kahama too, and picked by id.
+      const km = await api('km.waiter').get('/api/properties/KM/pos/customers?q=acme').expect(200);
+      expect(km.body[0].id).toBe(customerId);
+      const other = await openCheck('k1.waiter', 'K1-COCKTAIL');
+      const picked = await api('k1.waiter').post(`${POS}/checks/${other.id}/customer`, { customerId }).expect(200);
+      expect(picked.body.customer).toMatchObject({ id: customerId, kraPin: 'P051234567Q' });
+
+      // The same PIN saved again updates that customer rather than adding a second one.
+      const again = await api('k1.waiter')
+        .post(`${POS}/checks/${other.id}/customer`, { name: 'Acme Traders Limited', kraPin: 'P051234567Q', save: true })
+        .expect(200);
+      expect(again.body.customer.id).toBe(customerId);
+
+      // Details typed for this bill only are not saved.
+      const once = await api('k1.waiter').post(`${POS}/checks/${other.id}/customer`, { name: 'Walk-in Ltd', kraPin: 'A111111111B' }).expect(200);
+      expect(once.body.customer).toMatchObject({ id: null, name: 'Walk-in Ltd' });
+      expect((await api('k1.waiter').get(`${POS}/customers?q=A111111111B`).expect(200)).body).toEqual([]);
+
+      const cleared = await api('k1.waiter').post(`${POS}/checks/${other.id}/customer`, { clear: true }).expect(200);
+      expect(cleared.body.customer).toBeNull();
+      const events = await api('k1.waiter').get(`${POS}/checks/${other.id}/events`).expect(200);
+      expect(events.body.map((e: { event: string }) => e.event)).toEqual(expect.arrayContaining(['customer_set', 'customer_cleared']));
+
+      // Corrections to saved customers are for managers.
+      await api('k1.waiter').put(`${POS}/customers/${customerId}`, { phone: '+254733000111' }).expect(403);
+      const fixed = await api('k1.manager').put(`${POS}/customers/${customerId}`, { phone: '+254733000111' }).expect(200);
+      expect(fixed.body).toMatchObject({ name: 'Acme Traders Limited', phone: '+254733000111' });
+      // The bill already set keeps the details it had.
+      expect((await api('k1.waiter').get(`${POS}/checks/${check.id}`).expect(200)).body.customer.phone).toBe('+254722123456');
+    });
+  });
+
   describe('offline capture (OPS-05)', () => {
     it('keeps device-generated check and line ids; a replay is idempotent and a clash is refused', async () => {
       const id = randomUUID();

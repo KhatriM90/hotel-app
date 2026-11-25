@@ -91,8 +91,16 @@ interface Check {
   lines: Line[];
   payments: Array<{ id: string; tender: string; amount: string; status: string; reference: string | null }>;
   roomCharge?: { amount: string; stayNumber: string; folioNumber: string; moves?: number } | null;
+  customer?: CheckCustomer | null;
   offline?: boolean;
 }
+interface CheckCustomer {
+  id: string | null;
+  name: string;
+  kraPin: string | null;
+  phone: string | null;
+}
+type SavedCustomer = { id: string; name: string; kraPin: string | null; phone: string | null };
 interface BasketLine {
   id: string;
   row: MenuRow;
@@ -113,6 +121,14 @@ const COUNTER_ROLES = ['owner', 'area_manager', 'manager', 'cashier', 'bartender
 /** Whether this user may open counter sales and bar tabs at the outlet (Kahama demo, 25 Nov 2026). */
 export function canOpenCounter(outlet: { counterStaffOnly?: boolean }, roles: string[]): boolean {
   return !outlet.counterStaffOnly || roles.some((r) => COUNTER_ROLES.includes(r));
+}
+
+export const KRA_PIN = /^[A-Z][0-9]{9}[A-Z]$/;
+
+/** How the customer shows on the check screen and in pick lists: "Acme Ltd · PIN P051234567Q". */
+export function customerLine(c: { name: string; kraPin: string | null; phone?: string | null } | null | undefined, withPhone = false): string {
+  if (!c) return '';
+  return [c.name, c.kraPin ? `PIN ${c.kraPin}` : '', withPhone && c.phone ? c.phone : ''].filter(Boolean).join(' · ');
 }
 
 /** Checks of this waiter that now have more items ready than last time seen; updates `seen`. */
@@ -153,6 +169,8 @@ export class WaiterApp {
   private floorTimer: ReturnType<typeof setInterval> | null = null;
   private floorView: 'tables' | 'orders' = 'tables';
   private readySeen = new Map<string, number>();
+  /** Checks where the waiter already asked about the customer's KRA PIN (asked once, before the bill or payment). */
+  private customerAsked = new Set<string>();
   private readyPrimed = false;
 
   constructor(
@@ -486,7 +504,7 @@ export class WaiterApp {
         <section class="menu">
           <div class="screen-head">
             <div><h1>${esc(where)} <small>${esc(kind)}</small></h1>
-              <p class="sub">${esc(m.outlet.name)} · ${esc(c.waiter)}${c.covers > 1 ? ` · ${c.covers} guests` : ''}${c.roomNumber ? ` · Room ${esc(c.roomNumber)} ${esc(c.guestName ?? '')}` : ''}</p></div>
+              <p class="sub">${esc(m.outlet.name)} · ${esc(c.waiter)}${c.covers > 1 ? ` · ${c.covers} guests` : ''}${c.roomNumber ? ` · Room ${esc(c.roomNumber)} ${esc(c.guestName ?? '')}` : ''}${c.customer ? ` · ${esc(customerLine(c.customer))}` : ''}</p></div>
             ${open ? '' : `<span class="chip">${esc(c.status)}</span>`}
           </div>
           <label class="search"><span aria-hidden="true">⌕</span><input type="search" data-search placeholder="Search item or code…" value="${esc(this.search)}" ${open ? '' : 'disabled'}></label>
@@ -551,6 +569,7 @@ export class WaiterApp {
                   <button data-act="discount" ${offline ? 'disabled' : ''}>Discount</button>
                   <button data-act="cancel" ${offline ? 'disabled' : ''}>Cancel items</button>
                   <button data-act="house" ${noPay ? 'disabled' : ''}>House account</button>
+                  <button data-act="customer" ${offline ? 'disabled' : ''}>Customer KRA PIN</button>
                   <button class="danger" data-act="void" ${offline ? 'disabled' : ''}>Void bill</button>
                 </div>
               </details>
@@ -626,6 +645,7 @@ export class WaiterApp {
     act('house', () => this.houseAccount());
     act('void', () => this.voidCheck());
     act('moveroom', () => this.moveRoomCharge());
+    act('customer', () => this.askCustomer(false));
   }
 
   /** Menu tiles for the chosen category, or every item matching the search. */
@@ -805,6 +825,7 @@ export class WaiterApp {
   // ---------------------------------------------------------------------------
   private async pay(preset?: string, amount?: string) {
     await this.flushDrafts();
+    if (!(await this.customerBeforeSettling())) return;
     const c = this.check!;
     const due = c.totals.balance;
     const res = await modal(
@@ -853,6 +874,7 @@ export class WaiterApp {
    * a reason and a manager's sign-off; every print is logged (Kahama meeting, 2.2).
    */
   private async printBill() {
+    if (!(await this.customerBeforeSettling())) return;
     const path = `${this.pos}/checks/${this.check!.id}/print`;
     type Printed = { html: string; printNo: number; changed: boolean; kind: string; printer: string | null };
     let out: Printed;
@@ -878,6 +900,87 @@ export class WaiterApp {
       printHtml(out.html);
       if (out.printNo > 1) toast(out.changed ? 'Updated bill printed' : 'Copy printed and logged', 'info');
     }
+  }
+
+  /** Asked once per check, before the first bill or payment (POS demo, 25 Nov 2026, point 15). False: the waiter stopped. */
+  private async customerBeforeSettling(): Promise<boolean> {
+    const c = this.check!;
+    if (c.status !== 'open' || c.customer || c.offline || this.customerAsked.has(c.id)) return true;
+    const result = await this.askCustomer(true);
+    if (result !== 'abort') this.customerAsked.add(c.id);
+    return result !== 'abort';
+  }
+
+  /**
+   * The customer's name and KRA PIN on the bill: a saved customer found by
+   * name, phone or PIN, or new details, saved for next time unless unticked
+   * (POS demo, 25 Nov 2026, points 15 to 17).
+   */
+  private async askCustomer(beforeSettling: boolean): Promise<'set' | 'skip' | 'abort'> {
+    const c = this.check!;
+    let found: SavedCustomer[] = [];
+    const current = c.customer;
+    const results = () =>
+      found.map((x) => `<label class="radio"><input type="radio" name="pick" value="${esc(x.id)}"> ${esc(customerLine(x, true))}</label>`).join('') ||
+      '<p class="muted">Type at least two letters or digits to find a saved customer.</p>';
+    const res = await modal(
+      beforeSettling ? 'KRA PIN on the bill?' : 'Customer on the bill',
+      `${beforeSettling ? '<p>Ask the customer whether they want their KRA PIN on the bill.</p>' : ''}
+       <label class="radio"><input type="radio" name="pick" value="none" ${beforeSettling || !current ? 'checked' : ''}> ${beforeSettling ? 'No, continue without' : 'No customer on the bill'}</label>
+       ${current ? `<label class="radio"><input type="radio" name="pick" value="keep" checked> Keep ${esc(customerLine(current))}</label>` : ''}
+       <label>Find a saved customer (name, phone or PIN)<input data-q autocomplete="off"></label>
+       <div data-results>${results()}</div>
+       <label class="radio"><input type="radio" name="pick" value="new"> New customer</label>
+       <div data-new hidden>
+         <label>Name or company<input name="name" minlength="2" maxlength="120" autocomplete="off"></label>
+         <label>KRA PIN<input name="kraPin" maxlength="11" autocomplete="off" placeholder="A012345678Z" style="text-transform:uppercase"></label>
+         <label>Phone<input name="phone" inputmode="tel" maxlength="20" autocomplete="off"></label>
+         <label class="radio"><input type="checkbox" name="save" checked> Save for next time</label>
+       </div>`,
+      {
+        submit: beforeSettling ? 'Continue' : 'Save',
+        onMount: (f) => {
+          const box = f.querySelector<HTMLElement>('[data-new]')!;
+          const sync = () => {
+            const pick = f.querySelector<HTMLInputElement>('[name=pick]:checked')?.value;
+            box.hidden = pick !== 'new';
+            box.querySelector<HTMLInputElement>('[name=name]')!.required = pick === 'new';
+          };
+          f.addEventListener('change', sync);
+          let t: ReturnType<typeof setTimeout>;
+          f.querySelector<HTMLInputElement>('[data-q]')!.addEventListener('input', (e) => {
+            clearTimeout(t);
+            const q = (e.target as HTMLInputElement).value.trim();
+            t = setTimeout(async () => {
+              found = q.length < 2 ? [] : await api.get<SavedCustomer[]>(`${this.pos}/customers?q=${encodeURIComponent(q)}`).catch(() => found);
+              f.querySelector('[data-results]')!.innerHTML = results();
+              sync();
+            }, 250);
+          });
+          sync();
+        },
+      },
+    );
+    if (!res) return beforeSettling ? 'abort' : 'skip';
+    let body: Record<string, unknown>;
+    if (res.pick === 'keep') return 'skip';
+    if (res.pick === 'none' || !res.pick) {
+      if (!current) return 'skip';
+      body = { clear: true };
+    } else if (res.pick === 'new') {
+      const kraPin = (res.kraPin ?? '').trim().toUpperCase();
+      if (kraPin && !KRA_PIN.test(kraPin)) {
+        toast('A KRA PIN is a letter, nine digits and a letter, like A012345678Z', 'error');
+        return 'abort';
+      }
+      body = { name: res.name, kraPin: kraPin || null, phone: res.phone?.trim() || null, save: res.save === 'on' };
+    } else {
+      body = { customerId: res.pick };
+    }
+    this.check = await api.post<Check>(`${this.pos}/checks/${c.id}/customer`, body);
+    toast(this.check.customer ? `On the bill: ${customerLine(this.check.customer)}` : 'Customer removed from the bill', 'ok');
+    this.renderCheck();
+    return 'set';
   }
 
   /**
