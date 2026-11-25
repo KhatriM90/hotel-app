@@ -4,7 +4,7 @@ import { AuditService } from '../audit/audit.service';
 import { DbService, Queryable } from '../db/db.service';
 import { ApprovalsService } from '../frontoffice/approvals.service';
 import { ApprovalInputT, businessDate, conflict, isPgError, withSavepoint } from '../frontoffice/common';
-import { FoliosService } from '../frontoffice/folios.service';
+import { FoliosService, LockedFolio } from '../frontoffice/folios.service';
 import { OutboxService } from '../integration/outbox.service';
 import { NumberingService } from '../numbering/numbering.service';
 import { PosChecksService, LockedCheck } from './checks.service';
@@ -22,6 +22,8 @@ export interface PosTenderInput {
 export interface RoomChargeInput {
   stayId: string;
   acknowledgement: { method: 'guest_signature' | 'staff_verified'; signedName: string; signature?: string | null };
+  reason?: string;
+  approval?: ApprovalInputT;
 }
 
 interface Totals {
@@ -311,6 +313,13 @@ export class PosSettlementService {
         }
       }
 
+      // A supervisor signs off every room charge (Kahama demo, 25 Nov 2026).
+      const approvalId = await this.approvals.approve({
+        permission: 'approve.room_charge', propertyId, action: 'pos.room_charge', entityType: 'pos_check', entityId: check.id,
+        reason: input.reason?.trim() || `Charge ${check.number} to stay ${folio.stayNumber}`, approval: input.approval,
+        details: { check: check.number, stay: folio.stayNumber, amount: amount.toString() },
+      });
+
       // Only the unpaid part moves to the folio, spread over the items so the folio stays itemised (AT-07).
       const lines = await this.checks.lines(q, check.id, `status NOT IN ('cancelled', 'wasted') AND amount > 0`);
       const parts = spreadOverLines(amount.toString(), lines.map((l) => l.amount));
@@ -340,10 +349,95 @@ export class PosSettlementService {
       await event(q, propertyId, check.id, 'room_charged', { stay: folio.stayNumber, folio: folio.number, amount: amount.toString(), method: ack.method });
       await this.audit.record({
         action: 'pos.room_charge', entityType: 'pos_check', entityId: check.id, propertyId,
-        newValues: { folio: folio.number, amount: amount.toString(), chargeIds, acknowledgement: ack.method },
+        newValues: { folio: folio.number, amount: amount.toString(), chargeIds, acknowledgement: ack.method, approvalId },
       });
       await this.closeIfSettled(q, check);
       return { ...(await this.checks.view(q, propertyId, check.id)), posting: { folioNumber: folio.number, stayNumber: folio.stayNumber, amount: amount.toString(), folioChargeIds: chargeIds } };
+    });
+  }
+
+  /**
+   * Moves a room charge posted to the wrong room to the right one (Kahama
+   * demo, 25 Nov 2026). The wrong folio gets a linked reversal of each charge
+   * from this check and the right folio the same charges, all under one
+   * supervisor approval; the check stays closed. Both guests must be in house
+   * with open folios: after checkout the folio needs a credit note instead.
+   */
+  async moveRoomCharge(propertyId: string, checkId: string, input: RoomChargeInput & { reason: string }) {
+    return this.db.tx(async (q) => {
+      await businessDate(q, propertyId, true);
+      const { rows: [current] } = await q.query<{ stayId: string; amount: string }>(
+        `SELECT coalesce(m.to_stay_id, rc.stay_id) AS "stayId", rc.amount::text AS amount
+           FROM pos_room_charges rc
+           LEFT JOIN LATERAL (SELECT to_stay_id FROM pos_room_charge_moves WHERE check_id = rc.check_id ORDER BY moved_at DESC LIMIT 1) m ON true
+          WHERE rc.property_id = $1 AND rc.check_id = $2`,
+        [propertyId, checkId],
+      );
+      if (!current) throw conflict('This bill was not charged to a room', 'no_room_charge');
+      if (current.stayId === input.stayId) throw conflict('The bill is already charged to that room', 'same_stay');
+      // Same lock order as everywhere else (property, then folios, then the check); two folios in id order.
+      const [first, second] = [current.stayId, input.stayId].sort();
+      const locked = new Map<string, LockedFolio>();
+      locked.set(first, await this.folios.lockPrimaryForStay(q, propertyId, first));
+      locked.set(second, await this.folios.lockPrimaryForStay(q, propertyId, second));
+      const from = locked.get(current.stayId)!;
+      const to = locked.get(input.stayId)!;
+      const check = await this.checks.lock(q, propertyId, checkId, false);
+      if (from.status !== 'open' || from.stayStatus !== 'checked_in') {
+        throw conflict(`Stay ${from.stayNumber} has checked out; correct it with a credit note from the front desk`, 'folio_closed');
+      }
+      if (to.stayStatus !== 'checked_in') throw conflict(`Stay ${to.stayNumber} is not in house`, 'stay_not_in_house');
+      if (!to.roomChargeAllowed) throw conflict(`Room charges are not allowed for stay ${to.stayNumber}`, 'room_charge_blocked');
+      if (to.status !== 'open') throw conflict(`Folio ${to.number} is closed`, 'folio_closed');
+      const ack = input.acknowledgement;
+      if (ack.method === 'guest_signature' && !ack.signature) throw new BadRequestException('Capture the guest’s signature, or verify the guest and choose staff verified (BIL-03)');
+
+      const { rows: charges } = await q.query<{ id: string; chargeCode: string; description: string; amount: string; outletId: string | null; serviceDate: string; reference: string | null }>(
+        `SELECT fc.id, fc.charge_code AS "chargeCode", fc.description, fc.amount::text AS amount, fc.outlet_id AS "outletId",
+                fc.service_date::text AS "serviceDate", fc.reference
+           FROM folio_charges fc
+          WHERE fc.folio_id = $1 AND fc.pos_check_id = $2 AND fc.reversal_of IS NULL
+            AND NOT EXISTS (SELECT 1 FROM folio_charges r WHERE r.reversal_of = fc.id)
+          ORDER BY fc.posted_at, fc.id`,
+        [from.id, check.id],
+      );
+      if (!charges.length) throw conflict(`No charges from ${check.number} are left on folio ${from.number}`, 'no_room_charge');
+      const amount = Money.sum(charges.map((c) => Money.of(c.amount)));
+      if (to.creditLimit !== null) {
+        const bal = await this.folios.balance(q, to.id);
+        const available = Money.of(to.creditLimit).subtract(bal.balance);
+        if (amount.compare(available) > 0) {
+          throw conflict(`This would take stay ${to.stayNumber} over its credit limit; ${available.format()} is available`, 'credit_limit', { available: available.toString() });
+        }
+      }
+      const approvalId = await this.approvals.approve({
+        permission: 'approve.room_charge', propertyId, action: 'pos.room_charge_move', entityType: 'pos_check', entityId: check.id,
+        reason: input.reason, approval: input.approval, details: { check: check.number, from: from.stayNumber, to: to.stayNumber, amount: amount.toString() },
+      });
+      const reversed: string[] = [];
+      const posted: string[] = [];
+      for (const c of charges) {
+        reversed.push((await this.folios.reverseIn(q, from, c.id, `Moved to stay ${to.stayNumber}: ${input.reason}`, approvalId)).id);
+        posted.push(
+          (await this.folios.postCharge(q, {
+            folio: to, chargeCode: c.chargeCode, description: c.description, quantity: '1', unitPrice: c.amount,
+            outletId: c.outletId, serviceDate: c.serviceDate, reference: c.reference ?? check.number, posCheckId: check.id,
+          })).id,
+        );
+      }
+      await q.query(
+        `INSERT INTO pos_room_charge_moves (property_id, check_id, from_stay_id, from_folio_id, to_stay_id, to_folio_id, amount, reason, approval_id,
+                                            acknowledgement_method, signed_name, signature, moved_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [propertyId, check.id, from.stayId, from.id, to.stayId, to.id, amount.toString(), input.reason, approvalId, ack.method, ack.signedName.trim(),
+         ack.signature ?? null, actorId()],
+      );
+      await event(q, propertyId, check.id, 'room_charge_moved', { from: from.stayNumber, to: to.stayNumber, amount: amount.toString(), reason: input.reason });
+      await this.audit.record({
+        action: 'pos.room_charge_move', entityType: 'pos_check', entityId: check.id, propertyId, reason: input.reason,
+        newValues: { from: from.number, to: to.number, amount: amount.toString(), reversed, posted, approvalId },
+      });
+      return this.checks.view(q, propertyId, check.id);
     });
   }
 

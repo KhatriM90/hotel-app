@@ -15,6 +15,8 @@ export interface OutletPosSettingsInput {
   serviceTypes?: string[];
   liquorPolicy?: 'block' | 'warn';
   stockPolicy?: 'block' | 'warn';
+  /** Counter sales and bar tabs only for bar staff, cashiers and supervisors (Kahama demo, 25 Nov 2026). */
+  counterStaffOnly?: boolean;
   /** Replaces the outlet's licensed hours; a weekday left out sells no alcohol. */
   liquorHours?: { weekday: number; opensAt: string; closesAt: string }[];
   /** Station codes for kitchen and bar tickets; null removes the route. */
@@ -46,6 +48,7 @@ export class PosSettingsService {
         `SELECT o.id, o.code, o.name, o.type::text AS type, o.is_active AS "isActive", o.pos_enabled AS "posEnabled",
                 o.sells_alcohol AS "sellsAlcohol", to_char(o.business_day_cutoff, 'HH24:MI') AS "businessDayCutoff",
                 o.service_types AS "serviceTypes", o.liquor_policy AS "liquorPolicy", o.stock_policy AS "stockPolicy",
+                o.counter_staff_only AS "counterStaffOnly",
                 coalesce((SELECT jsonb_agg(jsonb_build_object('weekday', h.weekday, 'opensAt', to_char(h.opens_at, 'HH24:MI'),
                                                               'closesAt', to_char(h.closes_at, 'HH24:MI')) ORDER BY h.weekday)
                             FROM outlet_liquor_hours h WHERE h.outlet_id = o.id), '[]') AS "liquorHours",
@@ -99,6 +102,7 @@ export class PosSettingsService {
       if (input.serviceTypes !== undefined) set('service_types', [...new Set(input.serviceTypes)], '::text[]');
       if (input.liquorPolicy !== undefined) set('liquor_policy', input.liquorPolicy);
       if (input.stockPolicy !== undefined) set('stock_policy', input.stockPolicy);
+      if (input.counterStaffOnly !== undefined) set('counter_staff_only', input.counterStaffOnly);
       if (sets.length) await q.query(`UPDATE outlets SET ${sets.join(', ')} WHERE id = $1`, params);
 
       if (input.liquorHours) {
@@ -128,7 +132,7 @@ export class PosSettingsService {
       await this.audit.record({
         action: 'outlet.pos_settings', entityType: 'outlet', entityId: outlet.id, propertyId,
         previousValues: { posEnabled: outlet.posEnabled, businessDayCutoff: outlet.ownCutoff, serviceTypes: outlet.serviceTypes,
-          liquorPolicy: outlet.liquorPolicy, stockPolicy: outlet.stockPolicy },
+          liquorPolicy: outlet.liquorPolicy, stockPolicy: outlet.stockPolicy, counterStaffOnly: outlet.counterStaffOnly },
         newValues: { ...input },
       });
       const all = await this.get(propertyId);

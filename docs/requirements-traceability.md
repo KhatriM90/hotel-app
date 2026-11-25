@@ -119,8 +119,8 @@ Migrations `0014`–`0015`; API in `apps/api/src/pos`; waiter, bar and kitchen t
 | POS-05 | Done | Tables per outlet, covers, assigned waiter, open checks and named bar tabs; move a check to another table. |
 | POS-06 | Done | Line states draft → sent → preparing → ready → served, plus cancelled and wasted; check states open → closed or voided. Every step is in an append-only check history. |
 | POS-07 | Done | Food routes to the kitchen, drinks to the outlet's bar, per outlet. Tickets show table/room/tab, server, time, modifiers and notes. Reprints are numbered and say REPRINT; cancellations print a CANCEL ticket. Tickets print automatically on the station's printer through the print bridge (INT-04), or from the browser where a station has no printer. |
-| POS-08 | Done | Split by item or part quantity to a new check, merge open checks, move tables, split settlement across tenders, room charge and house account. Totals are unchanged to the cent. |
-| POS-09 | Done | Lookup in-house guests by room or name with eligibility and available credit; posts itemised folio charges; shows the folio and reference, or the reason it was refused. |
+| POS-08 | Done | Split by item or part quantity to a new check, merge open checks, move tables, split settlement across tenders, room charge and house account. Totals are unchanged to the cent. Split, merge and handing a check to another waiter need a reason and a supervisor (`approve.check_change`). |
+| POS-09 | Done | Lookup in-house guests by room or name with eligibility and available credit; posts itemised folio charges; shows the folio and reference, or the reason it was refused. Every room charge needs a supervisor (`approve.room_charge`); a charge posted to the wrong room is moved by reversing it on that folio and posting it on the right one (`pos_room_charge_moves`, BIL-07). |
 | POS-10 | Done | Cash (with change), M-PESA, card, bank transfer and other; mixed tenders; pending payments confirmed or failed; printable bill and receipt; balance due kept. M-PESA is a typed reference until the Daraja integration (INT-01). Email receipts are not built. |
 | POS-11 | Done | Pre-production cancellation (no approval), post-preparation waste, check void and refund are separate actions with reasons; sent items, voids and refunds need a manager; waiters can never refund. |
 | POS-12 | Done | Per-outlet availability and optional daily portion counts; the outlet policy warns or blocks; disabled items cannot be sold, offline included. |
@@ -245,4 +245,20 @@ From the minutes of Kahama Mombasa's service team (waiters, supervisors). Scope 
 | 2.5 ETR / KRA PIN receipts don't print automatically | Not started | Needs the TIMS integration (INT-02) and Kahama's TIMS device model. |
 | 2.6 Deactivate items when stock runs out, allowing for store transfers | Not started | Today: manual 86 and optional daily counts (POS-12). Proposal: availability from the outlet's SAP warehouse stock (INV-02, INV-08). |
 | 2.7 IT support on night shifts | Not software | Staffing. |
+
+## POS demo notes (25 Nov 2026)
+
+From the notes taken at the POS demo on 25 Nov 2026 (24 points). Triage with Manish Khatri in the "POS demo notes" doc. How to try them: [how-to-test-pos.md](how-to-test-pos.md), section 21.
+
+| Point | Status | Where |
+|---|---|---|
+| 2 Ready alert for waiters | Done | Floor refreshes every 15 s; a beep and "Ready to pick up" for the waiter's own checks. |
+| 3 Approval for split, merge, hand-over | Done | `approve.check_change`, reason required. |
+| 6 Waiter name on busy tables | Done | Floor screen. |
+| 7 Counter sale and bar tab for barmen only | Done | Outlet setting `counter_staff_only` (on for Kahama outlets with table service); `pos.counter` permission (bartender, cashier, supervisors). |
+| 8, 13 Approval for room charges | Done | `approve.room_charge` on every room charge (threshold to confirm). |
+| 9 Move a wrong room charge | Done | `POST /pos/checks/:id/room-charge/move`. |
+| 14 Paid today list | Done | Tablet floor screen. |
+| 15, 16, 17 Customer KRA PIN | In progress | Next change. |
+| 4, 5, 18, 20, 23, 24 | Waiting on decisions | See the doc. |
 

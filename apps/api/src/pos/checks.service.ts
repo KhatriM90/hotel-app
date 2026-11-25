@@ -10,6 +10,7 @@ import {
 } from '@hotel/shared';
 import { AuditService } from '../audit/audit.service';
 import { DbService, Queryable } from '../db/db.service';
+import { requestContext } from '../db/request-context';
 import { ApprovalsService } from '../frontoffice/approvals.service';
 import { ApprovalInputT, conflict, isPgError, withSavepoint } from '../frontoffice/common';
 import { NumberingService } from '../numbering/numbering.service';
@@ -157,7 +158,7 @@ export class PosChecksService {
     const { rows } = await q.query(
       `SELECT c.id, c.number, c.status, c.settlement, c.service_type AS "serviceType", c.business_date AS "businessDate",
               o.code AS "outletCode", o.name AS "outletName", c.table_id AS "tableId", t.code AS "tableCode", c.tab_name AS "tabName", c.covers,
-              c.waiter_id AS "waiterId", u.display_name AS waiter, c.stay_id AS "stayId", s.number AS "stayNumber", rm.number AS "roomNumber",
+              c.waiter_id AS "waiterId", u.display_name AS waiter, s.id AS "stayId", s.number AS "stayNumber", rm.number AS "roomNumber",
               CASE WHEN g.id IS NULL THEN NULL ELSE g.first_name || ' ' || g.last_name END AS "guestName",
               c.notes, c.opened_at AS "openedAt", c.closed_at AS "closedAt", c.merged_into_id AS "mergedIntoId", c.void_reason AS "voidReason",
               c.device_id AS "deviceId",
@@ -167,7 +168,9 @@ export class PosChecksService {
          FROM pos_checks c JOIN outlets o ON o.id = c.outlet_id JOIN users u ON u.id = c.waiter_id
          JOIN pos_check_totals tot ON tot.check_id = c.id
          LEFT JOIN pos_tables t ON t.id = c.table_id
-         LEFT JOIN stays s ON s.id = c.stay_id LEFT JOIN rooms rm ON rm.id = s.room_id LEFT JOIN guests g ON g.id = s.primary_guest_id
+         -- A room charge moved to the right room shows that room and guest (pos_room_charge_moves).
+         LEFT JOIN LATERAL (SELECT to_stay_id FROM pos_room_charge_moves WHERE check_id = c.id ORDER BY moved_at DESC LIMIT 1) mv ON true
+         LEFT JOIN stays s ON s.id = coalesce(mv.to_stay_id, c.stay_id) LEFT JOIN rooms rm ON rm.id = s.room_id LEFT JOIN guests g ON g.id = s.primary_guest_id
         WHERE c.property_id = $1 AND c.id = $2`,
       [propertyId, checkId],
     );
@@ -193,8 +196,13 @@ export class PosChecksService {
     const { rows: roomCharge } = await q.query(
       `SELECT rc.amount, rc.acknowledgement_method AS "acknowledgementMethod", rc.signed_name AS "signedName", f.number AS "folioNumber",
               s.number AS "stayNumber", rc.posted_at AS "postedAt",
-              (SELECT json_agg(fc.id ORDER BY fc.posted_at) FROM folio_charges fc WHERE fc.pos_check_id = rc.check_id) AS "folioChargeIds"
-         FROM pos_room_charges rc JOIN folios f ON f.id = rc.folio_id JOIN stays s ON s.id = rc.stay_id WHERE rc.check_id = $1`,
+              (SELECT json_agg(fc.id ORDER BY fc.posted_at) FROM folio_charges fc WHERE fc.pos_check_id = rc.check_id AND fc.folio_id = f.id
+                  AND fc.reversal_of IS NULL AND NOT EXISTS (SELECT 1 FROM folio_charges r WHERE r.reversal_of = fc.id)) AS "folioChargeIds",
+              (SELECT count(*)::int FROM pos_room_charge_moves m WHERE m.check_id = rc.check_id) AS moves
+         FROM pos_room_charges rc
+         LEFT JOIN LATERAL (SELECT to_stay_id, to_folio_id FROM pos_room_charge_moves WHERE check_id = rc.check_id ORDER BY moved_at DESC LIMIT 1) mv ON true
+         JOIN folios f ON f.id = coalesce(mv.to_folio_id, rc.folio_id) JOIN stays s ON s.id = coalesce(mv.to_stay_id, rc.stay_id)
+        WHERE rc.check_id = $1`,
       [checkId],
     );
     const { rows: house } = await q.query(
@@ -231,6 +239,12 @@ export class PosChecksService {
       if (input.tableId) {
         const { rowCount } = await q.query('SELECT 1 FROM pos_tables WHERE id = $1 AND outlet_id = $2 AND is_active', [input.tableId, outlet.id]);
         if (!rowCount) throw new BadRequestException(`That table is not at ${outlet.name}`);
+      }
+      if (input.serviceType === 'counter' && outlet.counterStaffOnly) {
+        const roles = requestContext.get()?.user?.roles ?? [];
+        if (!hasPermission(roles, 'pos.counter')) {
+          throw conflict(`At ${outlet.name}, counter sales and bar tabs are opened by the bar staff or a supervisor`, 'counter_staff_only');
+        }
       }
       if (input.serviceType === 'table' && !input.tableId) throw new BadRequestException('Table service needs a table');
       if (input.serviceType === 'room_service' && !input.stayId) throw new BadRequestException('Room service needs the guest’s stay');
@@ -682,9 +696,20 @@ export class PosChecksService {
   // Tables, tabs, transfers, merge and split (POS-05, POS-08)
   // -------------------------------------------------------------------------
 
-  async transfer(propertyId: string, checkId: string, input: { tableId?: string | null; waiterId?: string; tabName?: string | null; covers?: number }) {
+  async transfer(
+    propertyId: string,
+    checkId: string,
+    input: { tableId?: string | null; waiterId?: string; tabName?: string | null; covers?: number; reason?: string; approval?: ApprovalInputT },
+  ) {
     return this.db.tx(async (q) => {
       const check = await this.lock(q, propertyId, checkId);
+      // Handing an order to another waiter needs a supervisor (Kahama demo, 25 Nov 2026); moving tables does not.
+      const { reason, approval, ...change } = input;
+      let approvalId: string | null = null;
+      if (change.waiterId && change.waiterId !== check.waiterId) {
+        approvalId = await this.checkChangeApproval(check, 'pos.check_transfer', reason, approval, { toWaiterId: change.waiterId });
+      }
+      input = change;
       if (input.tableId) {
         const { rowCount } = await q.query('SELECT 1 FROM pos_tables WHERE id = $1 AND outlet_id = $2 AND is_active', [input.tableId, check.outletId]);
         if (!rowCount) throw new BadRequestException('That table is not at this outlet');
@@ -706,8 +731,19 @@ export class PosChecksService {
         [check.id, input.tableId !== undefined, input.tableId ?? null, input.waiterId ?? null, input.tabName !== undefined, input.tabName?.trim() || null,
          input.covers ?? null],
       );
-      await event(q, propertyId, check.id, 'transferred', { from: { tableId: check.tableId, waiterId: check.waiterId, tab: check.tabName }, to: input });
+      await event(q, propertyId, check.id, 'transferred', {
+        from: { tableId: check.tableId, waiterId: check.waiterId, tab: check.tabName }, to: input, reason: approvalId ? reason : null, approvalId,
+      });
       return this.view(q, propertyId, check.id);
+    });
+  }
+
+  /** A supervisor's sign-off for a split, merge or hand-over, with the reason (approve.check_change). */
+  private async checkChangeApproval(check: LockedCheck, action: string, reason: string | undefined, approval: ApprovalInputT | undefined, details: Record<string, unknown> = {}) {
+    if (!reason || reason.trim().length < 3) throw new BadRequestException('Give a reason; a supervisor approves this');
+    return this.approvals.approve({
+      permission: 'approve.check_change', propertyId: check.propertyId, action, entityType: 'pos_check', entityId: check.id,
+      reason, approval, details: { check: check.number, ...details },
     });
   }
 
@@ -716,13 +752,16 @@ export class PosChecksService {
     if (rows[0].n) throw conflict(`Check ${check.number} already has payments; settle it as it is`, 'check_has_payments');
   }
 
-  async merge(propertyId: string, checkId: string, fromCheckIds: string[]) {
+  async merge(propertyId: string, checkId: string, fromCheckIds: string[], sign: { reason?: string; approval?: ApprovalInputT } = {}) {
     return this.db.tx(async (q) => {
       const ids = [...new Set([checkId, ...fromCheckIds])].sort();
       if (ids.length < 2) throw new BadRequestException('Choose at least one other check to merge');
       const locked = new Map<string, LockedCheck>();
       for (const id of ids) locked.set(id, await this.lock(q, propertyId, id)); // fixed order: no deadlock
       const target = locked.get(checkId)!;
+      const approvalId = await this.checkChangeApproval(target, 'pos.check_merge', sign.reason, sign.approval, {
+        from: fromCheckIds.map((id) => locked.get(id)?.number),
+      });
       for (const id of fromCheckIds) {
         const src = locked.get(id)!;
         if (src.id === target.id) continue;
@@ -736,7 +775,7 @@ export class PosChecksService {
         );
         if (src.stayId && !target.stayId) await q.query('UPDATE pos_checks SET stay_id = $2 WHERE id = $1', [target.id, src.stayId]);
         await event(q, propertyId, src.id, 'merged_into', { into: target.number, lines: rowCount });
-        await event(q, propertyId, target.id, 'merged_from', { from: src.number, lines: rowCount });
+        await event(q, propertyId, target.id, 'merged_from', { from: src.number, lines: rowCount, reason: sign.reason, approvalId });
       }
       return this.view(q, propertyId, target.id);
     });
@@ -747,10 +786,11 @@ export class PosChecksService {
    * move to a new check at the same table. Split by amount is done by paying
    * in parts with several tenders.
    */
-  async split(propertyId: string, checkId: string, parts: Array<{ lineId: string; quantity?: string }>) {
+  async split(propertyId: string, checkId: string, parts: Array<{ lineId: string; quantity?: string }>, sign: { reason?: string; approval?: ApprovalInputT } = {}) {
     return this.db.tx(async (q) => {
       const check = await this.lock(q, propertyId, checkId);
       await this.assertNoSettlement(q, check);
+      const approvalId = await this.checkChangeApproval(check, 'pos.check_split', sign.reason, sign.approval);
       const live = await this.lines(q, check.id, `status NOT IN ('cancelled', 'wasted')`);
       if (parts.length === 0) throw new BadRequestException('Choose items to split off');
       const moving = parts.map((p) => {
@@ -792,7 +832,7 @@ export class PosChecksService {
         await this.reprice(q, copyRow, m.quantity, m.line.discountPercent, null, null);
         await this.reprice(q, m.line, rest, m.line.discountPercent, null, null);
       }
-      await event(q, propertyId, check.id, 'split', { into: number, lines: moving.map((m) => ({ id: m.line.id, quantity: m.quantity })) });
+      await event(q, propertyId, check.id, 'split', { into: number, lines: moving.map((m) => ({ id: m.line.id, quantity: m.quantity })), reason: sign.reason, approvalId });
       await event(q, propertyId, created.id, 'opened', { splitFrom: check.number });
       return { from: await this.view(q, propertyId, check.id), to: await this.view(q, propertyId, created.id) };
     });

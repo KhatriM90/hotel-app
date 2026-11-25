@@ -22,6 +22,7 @@ Each acceptance test below also runs automatically in `apps/api/test/pos.e2e-spe
 | `k1.reception` | Receptionist | K1 Klubhouse | Checking a guest in so they can charge to their room |
 | `sw.waiter`, `sw.manager`, `sw.reception` | | Small World | Small World tests |
 | `km.waiter`, `km.manager` | | Kahama | Isolation test (AT-18) |
+| `km.bartender` | | Kahama | Counter sales and bar tabs (section 21) |
 
 **Seeded test data (placeholders until the client sends real menus, prices and licence hours)**
 
@@ -210,6 +211,17 @@ Set up as in [printing.md](printing.md), "Trying it without hardware": a printer
 - [ ] Print a bill: with a receipt printer set for the outlet, the tablet says "Bill sent to …" instead of opening the browser print window. Reprint rules (section 17) still apply.
 - [ ] Reprint a ticket on the station screen: it goes to the printer with a REPRINT banner.
 - [ ] As a waiter, the Printers page is not in the back office menu; the API answers 403.
+
+## 21. POS demo controls (Kahama demo, 25 Nov 2026)
+
+- [ ] **Counter rule.** Tablet as `km.waiter` at Kahama's Shisha lounge (or any Kahama outlet with table service): **Counter** and **Bar tab** are not shown, and the API refuses with `counter_staff_only`. As `km.bartender` they work. At an outlet without table service (pool bar) the waiter can still sell at the counter. Back office **POS settings**, outlet, "Counter sales and bar tabs" switches the rule.
+- [ ] **Split and merge.** As a waiter, split a check or merge two: the tablet asks for a reason and a supervisor's username and password. Your own password is refused; `km.manager` approves it. The check history shows the reason and the approval.
+- [ ] **Hand-over to another waiter.** Moving a check to another waiter needs the same approval. Moving it to another table does not.
+- [ ] **Room charge.** **Charge to room** asks for a supervisor after the guest signs. Without one nothing is posted to the folio.
+- [ ] **Wrong room.** Open the closed room-charged check (from **Paid today**) and tap **Wrong room? Move charge**. Pick the right guest, give a reason and get a supervisor. The first folio shows a reversal, the second folio the same items, and the check now shows the new room. Moving to the same stay is refused.
+- [ ] **Waiter on busy tables.** The floor shows the waiter's name on each busy table.
+- [ ] **Ready alert.** Leave the waiter on the floor screen. Mark an item Ready on the station screen: within 15 seconds the tablet beeps and says "Ready to pick up: …". Other waiters' checks do not alert.
+- [ ] **Paid today.** The **Paid today** button lists today's closed checks with how they were settled; tapping one opens it (for a bill copy or a room move).
 
 ---
 

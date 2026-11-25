@@ -24,6 +24,7 @@ interface Menu {
   modifierGroups: Array<{ code: string; options: Array<{ id: string; code: string }> }>;
   tables: Array<{ id: string; code: string }>;
   liquorAllowedNow: boolean;
+  outlet: { counterStaffOnly: boolean };
 }
 interface Check {
   id: string;
@@ -67,7 +68,9 @@ class Outlet {
   }
 
   async open(user: UserApi, body: Record<string, unknown> = {}): Promise<Check> {
-    return user.post<Check>(`${this.path}/outlets/${this.code}/checks`, { serviceType: 'counter', notes: DEMO_NOTE, ...body });
+    // Where counter sales are kept for the bar staff, the demo waiter rings up a takeaway instead.
+    const staffOnly = (await this.load(user)).outlet.counterStaffOnly;
+    return user.post<Check>(`${this.path}/outlets/${this.code}/checks`, { serviceType: staffOnly ? 'takeaway' : 'counter', notes: DEMO_NOTE, ...body });
   }
 
   async openTable(user: UserApi, table: string, covers: number): Promise<Check> {
@@ -221,7 +224,9 @@ export async function posDemo(ctx: DemoContext, hotel: HotelForPos): Promise<voi
       const added = await bar.add(waiter, c, [['BR-GUINNESS', 3], ['ST-CHIPS', 1]], M);
       await bar.send(waiter, c);
       const guinness = added.lines.find((l) => l.name.startsWith('Guinness'))!;
-      const split = await waiter.post<{ from: Check; to: Check }>(`${POS}/checks/${c.id}/split`, { parts: [{ lineId: guinness.id, quantity: '1' }] });
+      const split = await waiter.post<{ from: Check; to: Check }>(`${POS}/checks/${c.id}/split`, {
+        parts: [{ lineId: guinness.id, quantity: '1' }], reason: 'Guest pays for their own beer', approval,
+      });
       await bar.pay(waiter, split.from, [card(split.from.totals.total)]);
       await bar.pay(waiter, split.to, [mpesa(split.to.totals.total)]);
       return `check ${split.from.number} (${split.from.totals.total}) and ${split.to.number} (${split.to.totals.total})`;
@@ -232,7 +237,7 @@ export async function posDemo(ctx: DemoContext, hotel: HotelForPos): Promise<voi
       await bar.add(waiter, a, [['BR-WHITECAP', 2]], M);
       const b = await bar.openTable(waiter, 'T7', 2);
       await bar.add(waiter, b, [['BR-CIDER', 2], ['ST-WINGS', 1, { portion: 'FULL' }]], M);
-      const merged = await waiter.post<Check>(`${POS}/checks/${a.id}/merge`, { fromCheckIds: [b.id] });
+      const merged = await waiter.post<Check>(`${POS}/checks/${a.id}/merge`, { fromCheckIds: [b.id], reason: 'Tables joined', approval });
       await bar.pay(waiter, merged, [card(merged.totals.total)]);
       return `check ${b.number} merged into ${a.number}, ${merged.totals.total} paid by card`;
     });
@@ -292,7 +297,7 @@ export async function posDemo(ctx: DemoContext, hotel: HotelForPos): Promise<voi
       await rest.send(waiter, c);
       await rest.pay(waiter, c, [mpesa('1000.00')]);
       const charged = await waiter.post<Check & { roomCharge: { amount: string } }>(`${POS}/checks/${c.id}/room-charge`, {
-        stayId: g.id, acknowledgement: { method: 'staff_verified', signedName: g.name },
+        stayId: g.id, acknowledgement: { method: 'staff_verified', signedName: g.name }, approval,
       });
       return `check ${c.number}: ${added.totals.total} = 1,000.00 M-PESA + ${charged.roomCharge.amount} to room ${g.room} (${g.name})`;
     });
@@ -305,7 +310,7 @@ export async function posDemo(ctx: DemoContext, hotel: HotelForPos): Promise<voi
       const c = await outlet.open(waiter);
       await outlet.add(waiter, c, spa ? [['SPA-MASSAGE', 1]] : [['SP-TANQUERAY', 2, { portion: 'TOT', mods: [['MIXER', 'TONIC']] }], ['ST-CHIPS', 1]], M);
       const charged = await waiter.post<Check & { roomCharge: { amount: string } }>(`${POS}/checks/${c.id}/room-charge`, {
-        stayId: roomGuest.id, acknowledgement: { method: 'guest_signature', signedName: roomGuest.name, signature: SIGNATURE },
+        stayId: roomGuest.id, acknowledgement: { method: 'guest_signature', signedName: roomGuest.name, signature: SIGNATURE }, approval,
       });
       return `check ${c.number}: ${charged.roomCharge.amount} to room ${roomGuest.room} (${roomGuest.name}), signed`;
     });

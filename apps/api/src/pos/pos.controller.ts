@@ -57,10 +57,13 @@ const AddLines = z.object({
 const Discount = z.object({ lineIds: z.array(Uuid).max(100).optional(), percent: Percent, reason: Reason, approval: ApprovalInput });
 const CancelLines = z.object({ lineIds: z.array(Uuid).min(1).max(100), reason: Reason, approval: ApprovalInput });
 const Transfer = z
-  .object({ tableId: Uuid.nullish(), waiterId: Uuid.optional(), tabName: z.string().trim().max(60).nullish(), covers: z.number().int().min(0).max(200).optional() })
-  .refine((v) => Object.keys(v).length > 0, 'nothing to change');
-const Merge = z.object({ fromCheckIds: z.array(Uuid).min(1).max(20) });
-const Split = z.object({ parts: z.array(z.object({ lineId: Uuid, quantity: Quantity.optional() })).min(1).max(100) });
+  .object({
+    tableId: Uuid.nullish(), waiterId: Uuid.optional(), tabName: z.string().trim().max(60).nullish(), covers: z.number().int().min(0).max(200).optional(),
+    reason: Reason.optional(), approval: ApprovalInput,
+  })
+  .refine((v) => ['tableId', 'waiterId', 'tabName', 'covers'].some((k) => k in v), 'nothing to change');
+const Merge = z.object({ fromCheckIds: z.array(Uuid).min(1).max(20), reason: Reason.optional(), approval: ApprovalInput });
+const Split = z.object({ parts: z.array(z.object({ lineId: Uuid, quantity: Quantity.optional() })).min(1).max(100), reason: Reason.optional(), approval: ApprovalInput });
 const Serve = z.object({ lineIds: z.array(Uuid).max(100).optional() });
 const VoidCheck = z.object({ reason: Reason, approval: ApprovalInput });
 const Pay = z.object({
@@ -78,14 +81,13 @@ const Pay = z.object({
     .max(10),
 });
 const ResolvePayment = z.object({ outcome: z.enum(['confirmed', 'failed']), reason: Reason.optional() });
-const RoomCharge = z.object({
-  stayId: Uuid,
-  acknowledgement: z.object({
-    method: z.enum(['guest_signature', 'staff_verified']),
-    signedName: z.string().trim().min(2).max(120),
-    signature: z.string().max(200_000).regex(/^data:image\/(png|svg\+xml);base64,/).nullish(),
-  }),
+const Acknowledgement = z.object({
+  method: z.enum(['guest_signature', 'staff_verified']),
+  signedName: z.string().trim().min(2).max(120),
+  signature: z.string().max(200_000).regex(/^data:image\/(png|svg\+xml);base64,/).nullish(),
 });
+const RoomCharge = z.object({ stayId: Uuid, acknowledgement: Acknowledgement, reason: Reason.optional(), approval: ApprovalInput });
+const MoveRoomCharge = z.object({ stayId: Uuid, acknowledgement: Acknowledgement, reason: Reason, approval: ApprovalInput });
 const HouseAccountCharge = z.object({ houseAccountCode: Code, reason: Reason, approval: ApprovalInput });
 const Refund = z.object({ paymentId: Uuid, amount: Amount, reason: Reason, reference: z.string().trim().max(60).nullish(), approval: ApprovalInput });
 const Reprint = z.object({ reason: Reason });
@@ -132,6 +134,7 @@ const OutletSettings = z.object({
   serviceTypes: z.array(z.enum(SERVICE_TYPES)).min(1).optional(),
   liquorPolicy: z.enum(['block', 'warn']).optional(),
   stockPolicy: z.enum(['block', 'warn']).optional(),
+  counterStaffOnly: z.boolean().optional(),
   liquorHours: z.array(z.object({ weekday: z.number().int().min(1).max(7), opensAt: Time, closesAt: Time })).max(7).optional(),
   routes: z.object({ kitchen: Code.nullish(), bar: Code.nullish() }).optional(),
 });
@@ -287,7 +290,7 @@ export class PosController {
   @RequirePermission('pos.use')
   @Idempotent()
   merge(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string, @Body(new ZodPipe(Merge)) b: Body<typeof Merge>) {
-    return this.checks.merge(p.id, id, b.fromCheckIds);
+    return this.checks.merge(p.id, id, b.fromCheckIds, { reason: b.reason, approval: b.approval });
   }
 
   @Post('checks/:checkId/split')
@@ -295,7 +298,7 @@ export class PosController {
   @RequirePermission('pos.use')
   @Idempotent()
   split(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string, @Body(new ZodPipe(Split)) b: Body<typeof Split>) {
-    return this.checks.split(p.id, id, b.parts);
+    return this.checks.split(p.id, id, b.parts, { reason: b.reason, approval: b.approval });
   }
 
   @Post('checks/:checkId/void')
@@ -344,6 +347,15 @@ export class PosController {
   @Idempotent()
   roomCharge(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string, @Body(new ZodPipe(RoomCharge)) b: Body<typeof RoomCharge>) {
     return this.settlement.roomCharge(p.id, id, b);
+  }
+
+  /** A room charge that went to the wrong room moves to the right one, with a supervisor (Kahama demo, 25 Nov 2026). */
+  @Post('checks/:checkId/room-charge/move')
+  @HttpCode(200)
+  @RequirePermission('pos.room_charge')
+  @Idempotent()
+  moveRoomCharge(@CurrentProperty() p: CurrentPropertyT, @Param('checkId', ParseUUIDPipe) id: string, @Body(new ZodPipe(MoveRoomCharge)) b: Body<typeof MoveRoomCharge>) {
+    return this.settlement.moveRoomCharge(p.id, id, b);
   }
 
   @Post('checks/:checkId/house-account')

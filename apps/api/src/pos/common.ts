@@ -21,6 +21,8 @@ export interface PosOutlet {
   stockPolicy: 'block' | 'warn';
   sapDimension2Code: string | null;
   issuingWarehouseCode: string | null;
+  /** Counter sales and bar tabs only for staff with pos.counter (barmen, cashiers, supervisors). */
+  counterStaffOnly: boolean;
 }
 
 export const OUTLET_SQL = `
@@ -29,7 +31,8 @@ export const OUTLET_SQL = `
          to_char(coalesce(o.business_day_cutoff, p.business_day_cutoff), 'HH24:MI') AS cutoff,
          to_char(o.business_day_cutoff, 'HH24:MI') AS "ownCutoff",
          o.service_types AS "serviceTypes", o.liquor_policy AS "liquorPolicy", o.stock_policy AS "stockPolicy",
-         o.sap_dimension2_code AS "sapDimension2Code", o.issuing_warehouse_code AS "issuingWarehouseCode"
+         o.sap_dimension2_code AS "sapDimension2Code", o.issuing_warehouse_code AS "issuingWarehouseCode",
+         o.counter_staff_only AS "counterStaffOnly"
     FROM outlets o JOIN properties p ON p.id = o.property_id`;
 
 export async function outletByCode(q: Queryable, propertyId: string, code: string, requirePos = true): Promise<PosOutlet> {

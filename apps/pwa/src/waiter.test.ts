@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evenShare, sentMessage, tileClass } from './waiter';
+import { canOpenCounter, evenShare, newlyReady, sentMessage, tileClass } from './waiter';
 
 describe('split evenly', () => {
   it('gives each person a share rounded down to the cent', () => {
@@ -27,5 +27,34 @@ describe('send message', () => {
       { number: 'T2', station: 'BAR', printer: 'Kitchen Epson' },
       { number: 'T3', station: 'GRILL', printer: null },
     ])).toBe('Sent: Kitchen Epson, GRILL screen');
+  });
+});
+
+describe('counter sales and bar tabs', () => {
+  it('are open to everyone unless the outlet keeps them for counter staff', () => {
+    expect(canOpenCounter({ counterStaffOnly: false }, ['waiter'])).toBe(true);
+    expect(canOpenCounter({}, ['waiter'])).toBe(true);
+    expect(canOpenCounter({ counterStaffOnly: true }, ['waiter'])).toBe(false);
+    expect(canOpenCounter({ counterStaffOnly: true }, ['bartender'])).toBe(true);
+    expect(canOpenCounter({ counterStaffOnly: true }, ['waiter', 'cashier'])).toBe(true);
+  });
+});
+
+describe('ready alert', () => {
+  it('alerts only for my checks with more items ready than last seen', () => {
+    const seen = new Map<string, number>();
+    const checks = [
+      { id: 'a', waiterId: 'me', readyLines: 0 },
+      { id: 'b', waiterId: 'other', readyLines: 2 },
+    ];
+    expect(newlyReady(checks, 'me', seen)).toEqual([]);
+    checks[0].readyLines = 1;
+    expect(newlyReady(checks, 'me', seen)).toEqual(['a']);
+    expect(newlyReady(checks, 'me', seen)).toEqual([]);
+    checks[0].readyLines = 0;
+    expect(newlyReady(checks, 'me', seen)).toEqual([]);
+    checks[0].readyLines = 2;
+    expect(newlyReady(checks, 'me', seen)).toEqual(['a']);
+    expect(newlyReady(checks, undefined, new Map())).toEqual([]);
   });
 });

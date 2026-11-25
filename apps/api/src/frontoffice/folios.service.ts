@@ -222,33 +222,43 @@ export class FoliosService {
         permission: 'approve.charge_reversal', propertyId, action: 'folio.charge_reversal', entityType: 'folio_charge',
         entityId: chargeId, reason, approval, details: { amount: orig.amount, folio: folio.number },
       });
-      const bd = await businessDate(q, propertyId);
-      let inserted: { id: string };
-      try {
-        ({ rows: [inserted] } = await withSavepoint(q, 'reverse', () =>
-          q.query<{ id: string }>(
-            `INSERT INTO folio_charges (property_id, folio_id, stay_id, charge_code, description, outlet_id, service_date, quantity,
-                                        unit_price, discount_amount, amount, net_amount, tax_amount, reference, reversal_of,
-                                        reason, approval_id, posted_by, pos_check_id)
-             SELECT property_id, folio_id, stay_id, charge_code, 'Reversal: ' || description, outlet_id, $2, -quantity,
-                    unit_price, -discount_amount, -amount, -net_amount, -tax_amount, reference, id, $3, $4, $5, pos_check_id
-               FROM folio_charges WHERE id = $1
-             RETURNING id`,
-            [orig.id, bd, reason, approvalId, requestContext.get()?.user?.id ?? null],
-          ),
-        ));
-      } catch (err) {
-        if (isPgError(err, '23505')) throw conflict('This charge has already been reversed', 'already_reversed');
-        throw err;
-      }
-      await q.query(
-        `INSERT INTO folio_charge_taxes (charge_id, property_id, tax_code, rate_percent, taxable_amount, tax_amount)
-         SELECT $1, property_id, tax_code, rate_percent, -taxable_amount, -tax_amount FROM folio_charge_taxes WHERE charge_id = $2`,
-        [inserted.id, orig.id],
-      );
+      const inserted = await this.reverseIn(q, folio, orig.id, reason, approvalId);
       await this.audit.record({ action: 'folio.charge_reversed', entityType: 'folio_charge', entityId: orig.id, propertyId, reason, newValues: { reversalId: inserted.id, approvalId } });
       return this.charge(q, inserted.id);
     });
+  }
+
+  /**
+   * Adds the linked reversal of one charge (BIL-07) inside the caller's
+   * transaction; the folio must be locked and open, and the approval taken.
+   */
+  async reverseIn(q: Queryable, folio: LockedFolio, chargeId: string, reason: string, approvalId: string): Promise<{ id: string }> {
+    const propertyId = folio.propertyId;
+    const bd = await businessDate(q, propertyId);
+    let inserted: { id: string };
+    try {
+      ({ rows: [inserted] } = await withSavepoint(q, 'reverse', () =>
+        q.query<{ id: string }>(
+          `INSERT INTO folio_charges (property_id, folio_id, stay_id, charge_code, description, outlet_id, service_date, quantity,
+                                      unit_price, discount_amount, amount, net_amount, tax_amount, reference, reversal_of,
+                                      reason, approval_id, posted_by, pos_check_id)
+           SELECT property_id, folio_id, stay_id, charge_code, 'Reversal: ' || description, outlet_id, $2, -quantity,
+                  unit_price, -discount_amount, -amount, -net_amount, -tax_amount, reference, id, $3, $4, $5, pos_check_id
+             FROM folio_charges WHERE id = $1
+           RETURNING id`,
+          [chargeId, bd, reason, approvalId, requestContext.get()?.user?.id ?? null],
+        ),
+      ));
+    } catch (err) {
+      if (isPgError(err, '23505')) throw conflict('This charge has already been reversed', 'already_reversed');
+      throw err;
+    }
+    await q.query(
+      `INSERT INTO folio_charge_taxes (charge_id, property_id, tax_code, rate_percent, taxable_amount, tax_amount)
+       SELECT $1, property_id, tax_code, rate_percent, -taxable_amount, -tax_amount FROM folio_charge_taxes WHERE charge_id = $2`,
+      [inserted.id, chargeId],
+    );
+    return inserted;
   }
 
   async charge(q: Queryable, id: string) {
