@@ -1,4 +1,4 @@
-import { ascii, columnsFor, EscPos, escposTicket, wrap } from './escpos';
+import { ascii, columnsFor, EscPos, escposCheck, escposTicket, wrap } from './escpos';
 
 describe('ESC/POS slips for Epson printers (INT-04)', () => {
   it('keeps text to plain ASCII the printer can show on any code page', () => {
@@ -37,5 +37,19 @@ describe('ESC/POS slips for Epson printers (INT-04)', () => {
     expect(text).toContain('TABLE T4');
     expect(text).toContain('Reason: Guest changed mind');
     expect(text).toContain('+ Extra chilli');
+  });
+
+  it('prints the customer and their KRA PIN on the bill (POS demo, 25 Nov 2026)', () => {
+    const check = {
+      status: 'open', number: 'K1-CHK-000045', outletName: 'Cocktail Bar', serviceType: 'counter', covers: 1, waiter: 'Alice', businessDate: '2026-11-25',
+      customer: { name: 'Acme Traders Ltd', kraPin: 'P051234567Q' },
+      lines: [{ status: 'sent', quantity: '1', name: 'Soda', amount: '150.00', modifiers: [], discountAmount: '0', ruleDiscount: '0', taxes: [] }],
+      totals: { total: '150.00', balance: '150.00' }, payments: [], refunds: [],
+    };
+    const text = escposCheck(check, { name: 'K1 Klubhouse', kraPin: 'P000598390N' }, 80).toBuffer().toString('latin1');
+    expect(text).toContain('Customer Acme Traders Ltd');
+    expect(text).toContain('Customer KRA PIN P051234567Q');
+    const none = escposCheck({ ...check, customer: null }, { name: 'K1 Klubhouse' }, 80).toBuffer().toString('latin1');
+    expect(none).not.toContain('Customer');
   });
 });

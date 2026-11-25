@@ -35,7 +35,7 @@ interface ModifierGroup {
   options: Array<{ id: string; code: string; name: string; priceDelta: string }>;
 }
 interface Menu {
-  outlet: { code: string; name: string; serviceTypes: string[]; cutoff: string };
+  outlet: { code: string; name: string; serviceTypes: string[]; cutoff: string; counterStaffOnly?: boolean };
   localTime: string;
   liquorAllowedNow: boolean;
   categories: Array<{ code: string; name: string }>;
@@ -51,6 +51,10 @@ interface CheckSummary {
   tabName: string | null;
   waiter: string;
   roomNumber: string | null;
+  waiterId?: string;
+  status?: string;
+  closedAt?: string | null;
+  settlement?: string | null;
   total: string;
   balance: string;
   unsentLines: number;
@@ -86,8 +90,17 @@ interface Check {
   totals: { total: string; paid: string; pending: string; roomCharged: string; balance: string };
   lines: Line[];
   payments: Array<{ id: string; tender: string; amount: string; status: string; reference: string | null }>;
+  roomCharge?: { amount: string; stayNumber: string; folioNumber: string; moves?: number } | null;
+  customer?: CheckCustomer | null;
   offline?: boolean;
 }
+interface CheckCustomer {
+  id: string | null;
+  name: string;
+  kraPin: string | null;
+  phone: string | null;
+}
+type SavedCustomer = { id: string; name: string; kraPin: string | null; phone: string | null };
 interface BasketLine {
   id: string;
   row: MenuRow;
@@ -102,6 +115,32 @@ const STATUS_LABEL: Record<string, string> = {
   draft: 'Not sent', sent: 'Sent', preparing: 'Preparing', ready: 'Ready', served: 'Served', cancelled: 'Cancelled', wasted: 'Waste',
 };
 const LOCAL_CHECKS = 'yeastay.pwa.localChecks';
+/** Roles with pos.counter (packages/shared roles.ts): counter sales and bar tabs where an outlet keeps them for bar staff. */
+const COUNTER_ROLES = ['owner', 'area_manager', 'manager', 'cashier', 'bartender'];
+
+/** Whether this user may open counter sales and bar tabs at the outlet (Kahama demo, 25 Nov 2026). */
+export function canOpenCounter(outlet: { counterStaffOnly?: boolean }, roles: string[]): boolean {
+  return !outlet.counterStaffOnly || roles.some((r) => COUNTER_ROLES.includes(r));
+}
+
+export const KRA_PIN = /^[A-Z][0-9]{9}[A-Z]$/;
+
+/** How the customer shows on the check screen and in pick lists: "Acme Ltd · PIN P051234567Q". */
+export function customerLine(c: { name: string; kraPin: string | null; phone?: string | null } | null | undefined, withPhone = false): string {
+  if (!c) return '';
+  return [c.name, c.kraPin ? `PIN ${c.kraPin}` : '', withPhone && c.phone ? c.phone : ''].filter(Boolean).join(' · ');
+}
+
+/** Checks of this waiter that now have more items ready than last time seen; updates `seen`. */
+export function newlyReady(checks: Array<{ id: string; waiterId?: string; readyLines: number }>, me: string | undefined, seen: Map<string, number>): string[] {
+  const fresh: string[] = [];
+  for (const c of checks) {
+    const before = seen.get(c.id) ?? 0;
+    if (me && c.waiterId === me && c.readyLines > before) fresh.push(c.id);
+    seen.set(c.id, c.readyLines);
+  }
+  return fresh;
+}
 
 export interface SentTicket {
   number: string;
@@ -127,6 +166,12 @@ export class WaiterApp {
   private readonly queue = new OfflineQueue();
   private online = true;
   private alerts: PrintAlerts | null = null;
+  private floorTimer: ReturnType<typeof setInterval> | null = null;
+  private floorView: 'tables' | 'orders' = 'tables';
+  private readySeen = new Map<string, number>();
+  /** Checks where the waiter already asked about the customer's KRA PIN (asked once, before the bill or payment). */
+  private customerAsked = new Set<string>();
+  private readyPrimed = false;
 
   constructor(
     private readonly root: HTMLElement,
@@ -151,6 +196,21 @@ export class WaiterApp {
   stop(): void {
     this.alerts?.stop();
     this.alerts = null;
+    if (this.floorTimer) clearInterval(this.floorTimer);
+    this.floorTimer = null;
+  }
+
+  /**
+   * While the floor is showing, it refreshes every 15 seconds; when the kitchen
+   * or bar marks one of this waiter's items Ready, the tablet beeps and says
+   * so (Kahama demo, 25 Nov 2026). Nothing redraws while a dialog is open.
+   */
+  private watchFloor(): void {
+    if (this.floorTimer) return;
+    this.floorTimer = setInterval(() => {
+      if (this.check || this.busy || document.querySelector('.modal-wrap') || !this.online) return;
+      void this.showFloor(this.floorView, true);
+    }, 15_000);
   }
 
   setOnline(online: boolean): void {
@@ -166,6 +226,7 @@ export class WaiterApp {
     await this.loadMenu();
     await this.flush();
     await this.showFloor();
+    this.watchFloor();
   }
 
   // ---------------------------------------------------------------------------
@@ -227,15 +288,25 @@ export class WaiterApp {
   // ---------------------------------------------------------------------------
   // Floor: tables, tabs and counter sales (POS-04, POS-05)
   // ---------------------------------------------------------------------------
-  async showFloor(view: 'tables' | 'orders' = 'tables'): Promise<void> {
+  async showFloor(view: 'tables' | 'orders' = 'tables', quiet = false): Promise<void> {
+    this.floorView = view;
     this.check = null;
     this.basket = [];
     this.search = '';
     try {
       this.checks = await api.get<CheckSummary[]>(`${this.pos}/outlets/${this.outletCode}/checks`);
     } catch (err) {
-      if (!(err instanceof OfflineError)) showError(err);
+      if (!(err instanceof OfflineError) && !quiet) showError(err);
     }
+    // A refresh can land after the waiter opened a check: leave that screen alone.
+    if (this.check) return;
+    const ready = newlyReady(this.checks, api.session?.user.id, this.readySeen);
+    if (ready.length && this.readyPrimed) {
+      const names = this.checks.filter((c) => ready.includes(c.id)).map((c) => (c.tableCode ? `Table ${c.tableCode}` : c.tabName ?? c.number));
+      readyBeep();
+      toast(`Ready to pick up: ${names.join(', ')}`, 'ok');
+    }
+    this.readyPrimed = true;
     const local = Object.values(this.localChecks())
       .filter((c) => !this.checks.some((s) => s.id === c.id))
       .map((c) => ({ ...c, total: c.totals.total, balance: c.totals.balance, unsentLines: 0, readyLines: 0, offline: true }) as CheckSummary);
@@ -245,6 +316,7 @@ export class WaiterApp {
     for (const c of all) if (c.tableCode) byTable.set(c.tableCode, [...(byTable.get(c.tableCode) ?? []), c]);
     const others = all.filter((c) => !c.tableCode);
     const pending = this.queue.list();
+    const counter = canOpenCounter(m.outlet, api.session?.user.roles ?? []);
     const label = (c: CheckSummary) => (c.tableCode ? `Table ${c.tableCode}` : c.tabName ?? (c.roomNumber ? `Room ${c.roomNumber}` : c.serviceType.replace('_', ' ')));
     const card = (c: CheckSummary) => `<li><button class="check-card ${c.readyLines ? 'ready' : ''}" data-open="${esc(c.id)}">
         <strong>${esc(label(c))}</strong><em>KSh ${kes(c.balance)}</em>
@@ -257,12 +329,13 @@ export class WaiterApp {
         <div><h1>${esc(m.outlet.name)}</h1>
           <p class="sub">Trading day starts ${esc(m.outlet.cutoff)}${m.liquorAllowedNow ? '' : ' · <strong class="warn">No alcohol sales now</strong>'}</p></div>
         <span class="spacer"></span>
+        <button class="ghost" data-act="paid">Paid today</button>
         <button class="ghost" data-act="refresh">↻ Refresh</button>
       </div>
       ${pending.length ? `<div class="banner">${pending.length} action(s) waiting to be sent${pending.some((p) => p.error) ? ' · some were refused' : ''}</div>` : ''}
       <div class="new-checks">
-        ${m.outlet.serviceTypes.includes('counter') ? '<button class="tile-btn t-go" data-new="counter">＋ Counter sale</button>' : ''}
-        ${m.outlet.serviceTypes.includes('table') ? '<button class="tile-btn t-tab" data-new="tab">＋ Bar tab</button>' : ''}
+        ${counter && m.outlet.serviceTypes.includes('counter') ? '<button class="tile-btn t-go" data-new="counter">＋ Counter sale</button>' : ''}
+        ${counter && m.outlet.serviceTypes.includes('table') ? '<button class="tile-btn t-tab" data-new="tab">＋ Bar tab</button>' : ''}
         ${m.outlet.serviceTypes.includes('takeaway') ? '<button class="tile-btn t-take" data-new="takeaway">＋ Takeaway</button>' : ''}
         ${m.outlet.serviceTypes.includes('room_service') ? '<button class="tile-btn t-room" data-new="room_service">＋ Room service</button>' : ''}
       </div>
@@ -274,7 +347,7 @@ export class WaiterApp {
                 const open = byTable.get(t.code) ?? [];
                 return `<button class="table ${open.length ? 'busy' : ''} ${open.some((c) => c.readyLines) ? 'ready' : ''}" data-table="${esc(t.id)}" data-code="${esc(t.code)}">
                   <strong>${esc(t.code)}</strong>
-                  <span>${open.length ? open.map((c) => `KSh ${kes(c.balance)}${c.offline ? ' ⏳' : ''}`).join('<br>') : `${t.seats} seats · free`}</span>
+                  <span>${open.length ? open.map((c) => `${esc(c.waiter)} · KSh ${kes(c.balance)}${c.offline ? ' ⏳' : ''}`).join('<br>') : `${t.seats} seats · free`}</span>
                   ${open.some((c) => c.readyLines) ? '<i>Ready</i>' : ''}
                 </button>`;
               })
@@ -286,6 +359,7 @@ export class WaiterApp {
           <ul class="check-list">${all.map(card).join('') || '<li class="muted">No open orders.</li>'}</ul>`}`,
     );
 
+    this.root.querySelector('[data-act=paid]')!.addEventListener('click', () => void this.paidToday().catch(showError));
     this.root.querySelector('[data-act=refresh]')!.addEventListener('click', () => void this.flush().then(() => this.loadMenu()).then(() => this.showFloor(view)).catch(showError));
     this.root.querySelectorAll<HTMLButtonElement>('[data-table]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -430,7 +504,7 @@ export class WaiterApp {
         <section class="menu">
           <div class="screen-head">
             <div><h1>${esc(where)} <small>${esc(kind)}</small></h1>
-              <p class="sub">${esc(m.outlet.name)} · ${esc(c.waiter)}${c.covers > 1 ? ` · ${c.covers} guests` : ''}${c.roomNumber ? ` · Room ${esc(c.roomNumber)} ${esc(c.guestName ?? '')}` : ''}</p></div>
+              <p class="sub">${esc(m.outlet.name)} · ${esc(c.waiter)}${c.covers > 1 ? ` · ${c.covers} guests` : ''}${c.roomNumber ? ` · Room ${esc(c.roomNumber)} ${esc(c.guestName ?? '')}` : ''}${c.customer ? ` · ${esc(customerLine(c.customer))}` : ''}</p></div>
             ${open ? '' : `<span class="chip">${esc(c.status)}</span>`}
           </div>
           <label class="search"><span aria-hidden="true">⌕</span><input type="search" data-search placeholder="Search item or code…" value="${esc(this.search)}" ${open ? '' : 'disabled'}></label>
@@ -495,12 +569,13 @@ export class WaiterApp {
                   <button data-act="discount" ${offline ? 'disabled' : ''}>Discount</button>
                   <button data-act="cancel" ${offline ? 'disabled' : ''}>Cancel items</button>
                   <button data-act="house" ${noPay ? 'disabled' : ''}>House account</button>
+                  <button data-act="customer" ${offline ? 'disabled' : ''}>Customer KRA PIN</button>
                   <button class="danger" data-act="void" ${offline ? 'disabled' : ''}>Void bill</button>
                 </div>
               </details>
               ${offline ? '<p class="note">Offline: keep taking orders. Payments and room charges wait for the connection.</p>' : '<p class="note">Tap sent items to pick them for split, discount or cancel.</p>'}
             </div>`
-            : `<div class="actions"><button class="a-bill" data-act="bill">⎙ Print receipt</button><button class="a-pay" data-act="back">Done</button></div>`}
+            : `<div class="actions"><button class="a-bill" data-act="bill">⎙ Print receipt</button>${c.status === 'closed' && c.roomCharge ? `<button class="a-plain" data-act="moveroom">Wrong room? Move charge</button>` : ''}<button class="a-pay" data-act="back">Done</button></div>`}
         </section>
       </div>`,
     );
@@ -569,6 +644,8 @@ export class WaiterApp {
     act('merge', () => this.merge());
     act('house', () => this.houseAccount());
     act('void', () => this.voidCheck());
+    act('moveroom', () => this.moveRoomCharge());
+    act('customer', () => this.askCustomer(false));
   }
 
   /** Menu tiles for the chosen category, or every item matching the search. */
@@ -748,6 +825,7 @@ export class WaiterApp {
   // ---------------------------------------------------------------------------
   private async pay(preset?: string, amount?: string) {
     await this.flushDrafts();
+    if (!(await this.customerBeforeSettling())) return;
     const c = this.check!;
     const due = c.totals.balance;
     const res = await modal(
@@ -796,6 +874,7 @@ export class WaiterApp {
    * a reason and a manager's sign-off; every print is logged (Kahama meeting, 2.2).
    */
   private async printBill() {
+    if (!(await this.customerBeforeSettling())) return;
     const path = `${this.pos}/checks/${this.check!.id}/print`;
     type Printed = { html: string; printNo: number; changed: boolean; kind: string; printer: string | null };
     let out: Printed;
@@ -821,6 +900,87 @@ export class WaiterApp {
       printHtml(out.html);
       if (out.printNo > 1) toast(out.changed ? 'Updated bill printed' : 'Copy printed and logged', 'info');
     }
+  }
+
+  /** Asked once per check, before the first bill or payment (POS demo, 25 Nov 2026, point 15). False: the waiter stopped. */
+  private async customerBeforeSettling(): Promise<boolean> {
+    const c = this.check!;
+    if (c.status !== 'open' || c.customer || c.offline || this.customerAsked.has(c.id)) return true;
+    const result = await this.askCustomer(true);
+    if (result !== 'abort') this.customerAsked.add(c.id);
+    return result !== 'abort';
+  }
+
+  /**
+   * The customer's name and KRA PIN on the bill: a saved customer found by
+   * name, phone or PIN, or new details, saved for next time unless unticked
+   * (POS demo, 25 Nov 2026, points 15 to 17).
+   */
+  private async askCustomer(beforeSettling: boolean): Promise<'set' | 'skip' | 'abort'> {
+    const c = this.check!;
+    let found: SavedCustomer[] = [];
+    const current = c.customer;
+    const results = () =>
+      found.map((x) => `<label class="radio"><input type="radio" name="pick" value="${esc(x.id)}"> ${esc(customerLine(x, true))}</label>`).join('') ||
+      '<p class="muted">Type at least two letters or digits to find a saved customer.</p>';
+    const res = await modal(
+      beforeSettling ? 'KRA PIN on the bill?' : 'Customer on the bill',
+      `${beforeSettling ? '<p>Ask the customer whether they want their KRA PIN on the bill.</p>' : ''}
+       <label class="radio"><input type="radio" name="pick" value="none" ${beforeSettling || !current ? 'checked' : ''}> ${beforeSettling ? 'No, continue without' : 'No customer on the bill'}</label>
+       ${current ? `<label class="radio"><input type="radio" name="pick" value="keep" checked> Keep ${esc(customerLine(current))}</label>` : ''}
+       <label>Find a saved customer (name, phone or PIN)<input data-q autocomplete="off"></label>
+       <div data-results>${results()}</div>
+       <label class="radio"><input type="radio" name="pick" value="new"> New customer</label>
+       <div data-new hidden>
+         <label>Name or company<input name="name" minlength="2" maxlength="120" autocomplete="off"></label>
+         <label>KRA PIN<input name="kraPin" maxlength="11" autocomplete="off" placeholder="A012345678Z" style="text-transform:uppercase"></label>
+         <label>Phone<input name="phone" inputmode="tel" maxlength="20" autocomplete="off"></label>
+         <label class="radio"><input type="checkbox" name="save" checked> Save for next time</label>
+       </div>`,
+      {
+        submit: beforeSettling ? 'Continue' : 'Save',
+        onMount: (f) => {
+          const box = f.querySelector<HTMLElement>('[data-new]')!;
+          const sync = () => {
+            const pick = f.querySelector<HTMLInputElement>('[name=pick]:checked')?.value;
+            box.hidden = pick !== 'new';
+            box.querySelector<HTMLInputElement>('[name=name]')!.required = pick === 'new';
+          };
+          f.addEventListener('change', sync);
+          let t: ReturnType<typeof setTimeout>;
+          f.querySelector<HTMLInputElement>('[data-q]')!.addEventListener('input', (e) => {
+            clearTimeout(t);
+            const q = (e.target as HTMLInputElement).value.trim();
+            t = setTimeout(async () => {
+              found = q.length < 2 ? [] : await api.get<SavedCustomer[]>(`${this.pos}/customers?q=${encodeURIComponent(q)}`).catch(() => found);
+              f.querySelector('[data-results]')!.innerHTML = results();
+              sync();
+            }, 250);
+          });
+          sync();
+        },
+      },
+    );
+    if (!res) return beforeSettling ? 'abort' : 'skip';
+    let body: Record<string, unknown>;
+    if (res.pick === 'keep') return 'skip';
+    if (res.pick === 'none' || !res.pick) {
+      if (!current) return 'skip';
+      body = { clear: true };
+    } else if (res.pick === 'new') {
+      const kraPin = (res.kraPin ?? '').trim().toUpperCase();
+      if (kraPin && !KRA_PIN.test(kraPin)) {
+        toast('A KRA PIN is a letter, nine digits and a letter, like A012345678Z', 'error');
+        return 'abort';
+      }
+      body = { name: res.name, kraPin: kraPin || null, phone: res.phone?.trim() || null, save: res.save === 'on' };
+    } else {
+      body = { customerId: res.pick };
+    }
+    this.check = await api.post<Check>(`${this.pos}/checks/${c.id}/customer`, body);
+    toast(this.check.customer ? `On the bill: ${customerLine(this.check.customer)}` : 'Customer removed from the bill', 'ok');
+    this.renderCheck();
+    return 'set';
   }
 
   /**
@@ -879,16 +1039,49 @@ export class WaiterApp {
     const c = this.check!;
     const stay = c.stayId ? { stayId: c.stayId, roomNumber: c.roomNumber ?? '', guestName: c.guestName ?? '', available: null } : await this.findStay('Charge to which room?');
     if (!stay) return;
+    const asked = await this.askAcknowledgement(`Charge ${kes(c.totals.balance)} to room ${stay.roomNumber}`, stay.guestName,
+      '<p class="muted">A supervisor approves every room charge.</p>');
+    if (!asked) return;
+    const out = await withSignOff((extra) => api.post<Check>(`${this.pos}/checks/${c.id}/room-charge`, { stayId: stay.stayId, acknowledgement: asked.acknowledgement, ...extra }));
+    if (!out) return;
+    this.check = out;
+    toast(`Charged to room ${stay.roomNumber}`, 'ok');
+    this.renderCheck();
+  }
+
+  /**
+   * Bills paid or charged this trading day (and the one before), newest first,
+   * to view again or print a copy; copies follow the reprint rules (Kahama demo, 25 Nov 2026).
+   */
+  private async paidToday() {
+    const closed = await api.get<CheckSummary[]>(`${this.pos}/outlets/${this.outletCode}/checks?status=closed`);
+    if (!closed.length) return toast('No paid bills yet today', 'info');
+    const settled: Record<string, string> = { payment: 'Paid', room_charge: 'Room', house_account: 'House account', zero: 'No charge' };
+    const res = await modal(
+      'Paid today',
+      `<div class="pick-list">${closed
+        .map((c, i) => `<label class="radio"><input type="radio" name="id" value="${esc(c.id)}" ${i ? '' : 'checked'}>
+          ${esc(c.number)} · ${esc(c.tableCode ? `Table ${c.tableCode}` : c.tabName ?? (c.roomNumber ? `Room ${c.roomNumber}` : c.serviceType.replace('_', ' ')))} ·
+          ${esc(c.waiter)} · KSh ${kes(c.total)} · ${esc(settled[c.settlement ?? ''] ?? '')}${c.closedAt ? ` · ${new Date(c.closedAt).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}` : ''}</label>`)
+        .join('')}</div>`,
+      { submit: 'Open' },
+    );
+    if (res?.id) await this.openExisting(res.id);
+  }
+
+  /** How the guest acknowledges a room charge: their signature, or staff verification (BIL-03). */
+  private async askAcknowledgement(title: string, guestName: string, extra = '', submit = 'Charge to room') {
     let signature: string | null = null;
     const res = await modal(
-      `Charge ${kes(c.totals.balance)} to room ${stay.roomNumber}`,
-      `<p>${esc(stay.guestName)}</p>
+      title,
+      `<p>${esc(guestName)}</p>
        <label class="radio"><input type="radio" name="method" value="guest_signature" checked> Guest signs</label>
        <label class="radio"><input type="radio" name="method" value="staff_verified"> Verified by staff (guest not present to sign)</label>
-       <label>Name of the person signing<input name="signedName" required minlength="2" maxlength="120" value="${esc(stay.guestName)}"></label>
-       <div data-sig><p class="muted">Signature</p><canvas class="sig" width="480" height="160"></canvas><button type="button" class="link" data-clear>Clear</button></div>`,
+       <label>Name of the person signing<input name="signedName" required minlength="2" maxlength="120" value="${esc(guestName)}"></label>
+       <div data-sig><p class="muted">Signature</p><canvas class="sig" width="480" height="160"></canvas><button type="button" class="link" data-clear>Clear</button></div>
+       ${extra}`,
       {
-        submit: 'Charge to room',
+        submit,
         onMount: (f) => {
           const canvas = f.querySelector<HTMLCanvasElement>('canvas')!;
           const pad = signaturePad(canvas, (data) => (signature = data));
@@ -902,17 +1095,34 @@ export class WaiterApp {
         },
       },
     );
-    if (!res) return;
+    if (!res) return null;
     if (res.method === 'guest_signature' && !signature) {
       toast('Ask the guest to sign, or choose “Verified by staff”', 'error');
-      return;
+      return null;
     }
-    this.check = await api.post<Check>(`${this.pos}/checks/${c.id}/room-charge`, {
-      stayId: stay.stayId,
-      acknowledgement: { method: res.method, signedName: res.signedName, signature: res.method === 'guest_signature' ? signature : null },
-    });
-    toast(`Charged to room ${stay.roomNumber}`, 'ok');
-    this.renderCheck();
+    return { res, acknowledgement: { method: res.method, signedName: res.signedName, signature: res.method === 'guest_signature' ? signature : null } };
+  }
+
+  /** A room charge that went to the wrong room moves to the right one, with a supervisor (Kahama demo, 25 Nov 2026). */
+  private async moveRoomCharge() {
+    const c = this.check!;
+    const stay = await this.findStay(`Move ${kes(c.roomCharge?.amount)} to which room?`);
+    if (!stay) return;
+    const asked = await this.askAcknowledgement(
+      `Move to room ${stay.roomNumber}`,
+      stay.guestName,
+      '<label>Reason<input name="reason" required minlength="3" maxlength="500" placeholder="e.g. wrong room number"></label><p class="muted">A supervisor approves the move. The charge comes off the other guest’s bill.</p>',
+      'Move charge',
+    );
+    if (!asked) return;
+    const out = await withSignOff((extra) =>
+      api.post<Check>(`${this.pos}/checks/${c.id}/room-charge/move`, { stayId: stay.stayId, acknowledgement: asked.acknowledgement, reason: asked.res.reason, ...extra }),
+    );
+    if (out) {
+      this.check = out;
+      toast(`Moved to room ${stay.roomNumber}`, 'ok');
+      this.renderCheck();
+    }
   }
 
   private async houseAccount() {
@@ -977,12 +1187,14 @@ export class WaiterApp {
     const lines = this.check!.lines.filter((l) => this.selected.has(l.id));
     const res = await modal(
       'Split to a new check',
-      lines.map((l) => `<label>${esc(l.name)} (of ${Number(l.quantity)})<input name="q_${esc(l.id)}" type="number" min="0.0001" max="${esc(l.quantity)}" step="any" value="${Number(l.quantity)}"></label>`).join(''),
+      lines.map((l) => `<label>${esc(l.name)} (of ${Number(l.quantity)})<input name="q_${esc(l.id)}" type="number" min="0.0001" max="${esc(l.quantity)}" step="any" value="${Number(l.quantity)}"></label>`).join('') +
+        '<label>Reason<input name="reason" required minlength="3" maxlength="500" placeholder="e.g. guests pay separately"></label><p class="muted">A supervisor approves a split.</p>',
       { submit: 'Split' },
     );
     if (!res) return;
     const parts = lines.map((l) => ({ lineId: l.id, quantity: String(res[`q_${l.id}`]) }));
-    const out = await api.post<{ from: Check; to: Check }>(`${this.pos}/checks/${this.check!.id}/split`, { parts });
+    const out = await withSignOff((extra) => api.post<{ from: Check; to: Check }>(`${this.pos}/checks/${this.check!.id}/split`, { parts, reason: res.reason, ...extra }));
+    if (!out) return;
     toast(`New check ${out.to.number}`, 'ok');
     this.check = out.to;
     this.selected.clear();
@@ -1011,11 +1223,14 @@ export class WaiterApp {
     if (!others.length) return toast('No other open checks here', 'info');
     const res = await modal(
       `Merge into ${this.check!.number}`,
-      others.map((c) => `<label class="radio"><input type="checkbox" name="from" value="${esc(c.id)}"> ${esc(c.number)} · ${esc(c.tableCode ? `Table ${c.tableCode}` : c.tabName ?? '')} · ${kes(c.balance)}</label>`).join(''),
+      others.map((c) => `<label class="radio"><input type="checkbox" name="from" value="${esc(c.id)}"> ${esc(c.number)} · ${esc(c.tableCode ? `Table ${c.tableCode}` : c.tabName ?? '')} · ${kes(c.balance)}</label>`).join('') +
+        '<label>Reason<input name="reason" required minlength="3" maxlength="500" placeholder="e.g. tables joined"></label><p class="muted">A supervisor approves a merge.</p>',
       { submit: 'Merge' },
     );
-    if (!res?.from) return;
-    this.check = await api.post<Check>(`${this.pos}/checks/${this.check!.id}/merge`, { fromCheckIds: res.from.split(',') });
+    if (!res?.from) return toast(res ? 'Tick the checks to merge' : '', res ? 'info' : 'info');
+    const out = await withSignOff((extra) => api.post<Check>(`${this.pos}/checks/${this.check!.id}/merge`, { fromCheckIds: res.from.split(','), reason: res.reason, ...extra }));
+    if (!out) return;
+    this.check = out;
     this.renderCheck();
   }
 
@@ -1142,4 +1357,20 @@ function signaturePad(canvas: HTMLCanvasElement, onChange: (data: string) => voi
   canvas.addEventListener('pointerup', end);
   canvas.addEventListener('pointerleave', end);
   return { clear: () => ctx.clearRect(0, 0, canvas.width, canvas.height) };
+}
+
+/** Two short rising tones: an order is ready to pick up. */
+function readyBeep(): void {
+  try {
+    const ctx = new AudioContext();
+    for (const [at, f] of [[0, 660], [0.2, 990]] as const) {
+      const osc = ctx.createOscillator();
+      osc.frequency.value = f;
+      osc.connect(ctx.destination);
+      osc.start(ctx.currentTime + at);
+      osc.stop(ctx.currentTime + at + 0.15);
+    }
+  } catch {
+    /* sound is a nicety */
+  }
 }

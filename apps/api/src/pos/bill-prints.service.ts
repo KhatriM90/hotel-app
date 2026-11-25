@@ -50,8 +50,10 @@ export class PosBillPrintsService {
         `SELECT tot.total::text AS total,
                 md5(coalesce((SELECT string_agg(l.id || ':' || l.quantity || ':' || l.amount, ',' ORDER BY l.id)
                                 FROM pos_check_lines l WHERE l.check_id = tot.check_id AND l.status NOT IN ('cancelled', 'wasted')), '')
-                    || '|' || tot.balance::text) AS "lineState"
-           FROM pos_check_totals tot WHERE tot.check_id = $1`,
+                    || '|' || tot.balance::text
+                    -- The customer's name and KRA PIN added to the bill make it an updated bill.
+                    || CASE WHEN c.customer_name IS NULL THEN '' ELSE '|' || c.customer_name || ':' || coalesce(c.customer_kra_pin, '') END) AS "lineState"
+           FROM pos_check_totals tot JOIN pos_checks c ON c.id = tot.check_id WHERE tot.check_id = $1`,
         [check.id],
       );
       const { rows: [last] } = await q.query<{ printNo: number; lineState: string }>(

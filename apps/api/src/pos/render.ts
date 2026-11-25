@@ -99,6 +99,7 @@ ${print && print.printNo > 1 ? `<div class="reprint">${print.changed ? `UPDATED 
 <div>Check ${esc(check.number)}${check.tableCode ? ` · Table ${esc(check.tableCode)}` : ''}${check.tabName ? ` · ${esc(check.tabName)}` : ''}</div>
 <div>${esc(label(check.serviceType))}${check.roomNumber ? ` · Room ${esc(check.roomNumber)}` : ''} · Covers ${esc(check.covers)}</div>
 <div>Server ${esc(check.waiter)} · ${esc(check.businessDate)}</div>
+${check.customer ? `<div>Customer ${esc(check.customer.name)}${check.customer.kraPin ? ` · KRA PIN ${esc(check.customer.kraPin)}` : ''}</div>` : ''}
 <hr><table>${lines || '<tr><td>No items</td></tr>'}</table><hr>
 <table>
 <tr class="strong"><td>TOTAL KES</td><td class="n">${money(t.total)}</td></tr>

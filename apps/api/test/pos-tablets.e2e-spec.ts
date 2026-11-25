@@ -32,7 +32,7 @@ describe('Kahama POS fixes: bill reprint control and shared tablets', () => {
     pin: (userId: string, pin: string) => request(http).post('/api/auth/pin-login').set('x-pos-device', token).send({ userId, pin }),
   });
 
-  const openCheck = async (user = 'km.waiter') => (await api(user).post(`${POS}/outlets/${outlet}/checks`, { serviceType: 'counter' }).expect(201)).body;
+  const openCheck = async (user = 'km.waiter') => (await api(user).post(`${POS}/outlets/${outlet}/checks`, { serviceType: 'takeaway' }).expect(201)).body;
   const add = (checkId: string, portionId: string, user = 'km.waiter') =>
     api(user).post(`${POS}/checks/${checkId}/lines`, { lines: [{ portionId, quantity: '1' }] }).expect(200);
 
@@ -191,7 +191,7 @@ describe('Kahama POS fixes: bill reprint control and shared tablets', () => {
       // Without the tablet's token a PIN is useless.
       await request(http).post('/api/auth/pin-login').send({ userId: waiterId, pin: '4826' }).expect(401);
 
-      const check = (await as(pinToken).post(`${POS}/outlets/${outlet}/checks`, { serviceType: 'counter' }).expect(201)).body;
+      const check = (await as(pinToken).post(`${POS}/outlets/${outlet}/checks`, { serviceType: 'takeaway' }).expect(201)).body;
       await as(pinToken).post(`${POS}/checks/${check.id}/lines`, { lines: [{ portionId: water, quantity: '1' }] }).expect(200);
       expect(check.waiter).toBe('Kahama waiter');
       await as(pinToken).post(`${POS}/checks/${check.id}/print`).expect(200);

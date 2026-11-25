@@ -76,6 +76,8 @@ export const PERMISSIONS = {
 
   // Restaurant, bar and kitchen POS (POS-*)
   'pos.use': ['owner', 'area_manager', 'manager', 'cashier', 'waiter', 'bartender'],
+  /** Counter sales and bar tabs at outlets that keep them for bar staff (Kahama demo, 25 Nov 2026). */
+  'pos.counter': ['owner', 'area_manager', 'manager', 'cashier', 'bartender'],
   'pos.kitchen': ['owner', 'area_manager', 'manager', 'kitchen', 'bartender'],
   'pos.settle': ['owner', 'area_manager', 'manager', 'cashier', 'waiter', 'bartender'],
   'pos.room_charge': ['owner', 'area_manager', 'manager', 'cashier', 'waiter', 'bartender'],
@@ -106,6 +108,10 @@ export const PERMISSIONS = {
   'approve.discount': ['owner', 'area_manager', 'manager'],
   'approve.comp': ['owner', 'area_manager', 'manager'],
   'approve.void': ['owner', 'area_manager', 'manager'],
+  /** Split, merge, or hand an order to another waiter (Kahama demo, 25 Nov 2026). */
+  'approve.check_change': ['owner', 'area_manager', 'manager'],
+  /** Charge a bill to a room, or move a room charge to the right room. */
+  'approve.room_charge': ['owner', 'area_manager', 'manager'],
   'approve.waste': ['owner', 'area_manager', 'manager'],
   'approve.refund': ['owner', 'area_manager', 'manager'],
   'approve.liquor_override': ['owner', 'area_manager', 'manager'],

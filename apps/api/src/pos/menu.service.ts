@@ -77,7 +77,7 @@ export class PosMenuService {
         [outlet.id],
       );
       return {
-        outlet: { code: outlet.code, name: outlet.name, type: outlet.type, serviceTypes: outlet.serviceTypes, cutoff: outlet.cutoff, liquorPolicy: outlet.liquorPolicy, stockPolicy: outlet.stockPolicy },
+        outlet: { code: outlet.code, name: outlet.name, type: outlet.type, serviceTypes: outlet.serviceTypes, cutoff: outlet.cutoff, liquorPolicy: outlet.liquorPolicy, stockPolicy: outlet.stockPolicy, counterStaffOnly: outlet.counterStaffOnly },
         localTime: local,
         liquorHours: hours,
         liquorAllowedNow: liquorAllowed(hours, local),

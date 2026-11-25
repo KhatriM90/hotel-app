@@ -257,6 +257,7 @@ interface OutletSettings {
   serviceTypes: string[];
   liquorPolicy: 'block' | 'warn';
   stockPolicy: 'block' | 'warn';
+  counterStaffOnly: boolean;
   liquorHours: Array<{ weekday: number; opensAt: string; closesAt: string }>;
   routes: { kitchen?: string; bar?: string };
 }
@@ -303,6 +304,7 @@ function OutletSettingsModal({ o, s, onClose, onDone }: { o: OutletSettings; s: 
     serviceTypes: o.serviceTypes,
     liquorPolicy: o.liquorPolicy,
     stockPolicy: o.stockPolicy,
+    counterStaffOnly: o.counterStaffOnly,
     kitchen: o.routes.kitchen ?? '',
     bar: o.routes.bar ?? '',
   });
@@ -321,6 +323,7 @@ function OutletSettingsModal({ o, s, onClose, onDone }: { o: OutletSettings; s: 
       serviceTypes: form.serviceTypes,
       liquorPolicy: form.liquorPolicy,
       stockPolicy: form.stockPolicy,
+      counterStaffOnly: form.counterStaffOnly,
       routes: { kitchen: form.kitchen || null, bar: form.bar || null },
       ...(o.sellsAlcohol ? { liquorHours: hours.flatMap((h, i) => (h.on ? [{ weekday: i + 1, opensAt: h.opensAt, closesAt: h.closesAt }] : [])) } : {}),
     };
@@ -366,6 +369,11 @@ function OutletSettingsModal({ o, s, onClose, onDone }: { o: OutletSettings; s: 
           <Field label="When stock runs out">
             <select value={form.stockPolicy} onChange={(e) => set({ stockPolicy: e.target.value as 'block' | 'warn' })}>
               <option value="warn">Warn the waiter</option><option value="block">Block the sale</option>
+            </select>
+          </Field>
+          <Field label="Counter sales and bar tabs" hint="Who may open a counter sale or a bar tab on the tablet.">
+            <select value={form.counterStaffOnly ? 'staff' : 'all'} onChange={(e) => set({ counterStaffOnly: e.target.value === 'staff' })}>
+              <option value="all">Any POS user</option><option value="staff">Barmen, cashiers and supervisors only</option>
             </select>
           </Field>
         </div>

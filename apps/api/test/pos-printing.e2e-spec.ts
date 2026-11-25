@@ -45,7 +45,7 @@ describe('POS printing through the property bridge (INT-04)', () => {
   /** Makes retries due at once instead of after their back-off. */
   const due = () => sql(`UPDATE print_jobs SET next_attempt_at = now() WHERE status = 'queued'`);
   const sendOrder = async () => {
-    const check = (await api('km.waiter').post(`${POS}/outlets/${outlet}/checks`, { serviceType: 'counter' }).expect(201)).body;
+    const check = (await api('km.waiter').post(`${POS}/outlets/${outlet}/checks`, { serviceType: 'takeaway' }).expect(201)).body;
     await api('km.waiter').post(`${POS}/checks/${check.id}/lines`, { lines: [{ portionId: water, quantity: '2', notes: 'No ice' }] }).expect(200);
     const sent = await api('km.waiter').post(`${POS}/checks/${check.id}/send`).expect(200);
     return { check, ticket: sent.body.tickets[0] as { id: string; number: string; printer: string | null; printJobId: string | null } };
@@ -72,7 +72,7 @@ describe('POS printing through the property bridge (INT-04)', () => {
     const menu = (await api('km.manager').get(`${POS}/outlets/${outlet}/menu`).expect(200)).body.items as Array<{ code: string; portionId: string }>;
     water = menu.find((i) => i.code === 'SD-WATER')!.portionId;
     // Whichever station the water goes to gets the printer.
-    const probe = (await api('km.waiter').post(`${POS}/outlets/${outlet}/checks`, { serviceType: 'counter' }).expect(201)).body;
+    const probe = (await api('km.waiter').post(`${POS}/outlets/${outlet}/checks`, { serviceType: 'takeaway' }).expect(201)).body;
     await api('km.waiter').post(`${POS}/checks/${probe.id}/lines`, { lines: [{ portionId: water, quantity: '1' }] }).expect(200);
     const sent = (await api('km.waiter').post(`${POS}/checks/${probe.id}/send`).expect(200)).body;
     station = sent.tickets[0].station;

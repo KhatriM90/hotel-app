@@ -17,7 +17,7 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
   const tokens: Record<string, string> = {};
   const USERS = [
     'owner', 'k1.manager', 'k1.waiter', 'k1.cashier', 'k1.bartender', 'k1.kitchen', 'k1.reception',
-    'sw.manager', 'sw.waiter', 'sw.reception', 'km.waiter', 'km.manager',
+    'sw.manager', 'sw.waiter', 'sw.reception', 'km.waiter', 'km.manager', 'km.bartender',
   ];
   const K1 = '/api/properties/K1';
   const POS = `${K1}/pos`;
@@ -118,7 +118,7 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
     try {
       await owner.query(
         `UPDATE pos_outlet_days SET status = 'closed', closed_at = now(), finalised_at = now(), totals = '{"test": true}'
-          WHERE status = 'open' AND property_id = (SELECT id FROM properties WHERE code = 'K1')`,
+          WHERE status = 'open' AND property_id IN (SELECT id FROM properties WHERE code IN ('K1', 'KM'))`,
       );
     } finally {
       await owner.end();
@@ -380,14 +380,31 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
       expect(res.body.totals.total).toBe('1590.00');
       const guinness = res.body.lines.find((l: { name: string }) => l.name.startsWith('Guinness'));
 
-      const split = await api('k1.waiter').post(`${POS}/checks/${c.id}/split`, { parts: [{ lineId: guinness.id, quantity: '1' }] }).expect(200);
+      // Split, merge and handing over to another waiter need a supervisor and a reason (Kahama demo, 25 Nov 2026).
+      const parts = [{ lineId: guinness.id, quantity: '1' }];
+      await api('k1.waiter').post(`${POS}/checks/${c.id}/split`, { parts }).expect(400);
+      const unapproved = await api('k1.waiter').post(`${POS}/checks/${c.id}/split`, { parts, reason: 'Pays own beer' }).expect(403);
+      expect(unapproved.body.error).toBe('approval_required');
+      const split = await api('k1.waiter').post(`${POS}/checks/${c.id}/split`, { parts, reason: 'Pays own beer', approval: MANAGER }).expect(200);
       expect(split.body.from.totals.total).toBe('1210.00');
       expect(split.body.to.totals.total).toBe('380.00');
 
       const moved = await api('k1.waiter').post(`${POS}/checks/${split.body.to.id}/transfer`, { tableId: t2.id }).expect(200);
       expect(moved.body.tableCode).toBe(t2.code);
 
-      const merged = await api('k1.waiter').post(`${POS}/checks/${c.id}/merge`, { fromCheckIds: [split.body.to.id] }).expect(200);
+      // Moving tables needs no sign-off; handing the order to another waiter does.
+      const db = await ownerClient();
+      const bartender = (await db.query<{ id: string }>(`SELECT id FROM users WHERE username = 'k1.bartender'`).finally(() => db.end())).rows[0];
+      {
+        const handover = await api('k1.waiter').post(`${POS}/checks/${split.body.to.id}/transfer`, { waiterId: bartender.id }).expect(400);
+        expect(handover.body.message).toMatch(/reason/);
+        await api('k1.waiter').post(`${POS}/checks/${split.body.to.id}/transfer`, { waiterId: bartender.id, reason: 'End of shift' }).expect(403);
+        const handed = await api('k1.waiter').post(`${POS}/checks/${split.body.to.id}/transfer`, { waiterId: bartender.id, reason: 'End of shift', approval: MANAGER }).expect(200);
+        expect(handed.body.waiter).toBe('K1 bartender');
+      }
+
+      await api('k1.waiter').post(`${POS}/checks/${c.id}/merge`, { fromCheckIds: [split.body.to.id], reason: 'Tables joined' }).expect(403);
+      const merged = await api('k1.waiter').post(`${POS}/checks/${c.id}/merge`, { fromCheckIds: [split.body.to.id], reason: 'Tables joined', approval: MANAGER }).expect(200);
       expect(merged.body.totals.total).toBe('1590.00');
       const gone = await api('k1.waiter').get(`${POS}/checks/${split.body.to.id}`).expect(200);
       expect(gone.body).toMatchObject({ status: 'merged', mergedIntoId: c.id });
@@ -544,7 +561,7 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
       expect(Object.keys(lookup.body[0])).not.toContain('identity');
 
       const charged = await api('sw.waiter')
-        .post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: stay.id, acknowledgement: { method: 'guest_signature', signedName: 'Pos Guest', signature: 'data:image/png;base64,iVBORw0KGgo=' } })
+        .post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: stay.id, acknowledgement: { method: 'guest_signature', signedName: 'Pos Guest', signature: 'data:image/png;base64,iVBORw0KGgo=' }, approval: SW_MANAGER })
         .expect(200);
       expect(charged.body).toMatchObject({ status: 'closed', settlement: 'room_charge' });
       expect(charged.body.roomCharge).toMatchObject({ amount: '1670.00', signedName: 'Pos Guest' });
@@ -557,7 +574,7 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
       expect(Number(folio.balance.balance) - Number(before.balance)).toBeCloseTo(1670, 2);
 
       // Charged once: a second attempt is refused.
-      await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: stay.id, acknowledgement: ack }).expect(409);
+      await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: stay.id, acknowledgement: ack, approval: SW_MANAGER }).expect(409);
 
       // Revenue once: the outlet's sales are the check, settled by M-PESA plus the room charge. SAP gets only the
       // M-PESA share now (the room share is invoiced with the folio), and the two shares add up to each line.
@@ -587,14 +604,14 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
       const blocked = await checkedInStay({ roomChargeAllowed: false });
       const c = await openCheck('sw.waiter', 'SW-MAINBAR', {}, 'SW');
       await add('sw.waiter', c.id, [{ portionId: (await item('SW-MAINBAR', 'SP-JW-BLACK', 'BTL', 'SW')).portionId, quantity: '1' }], {}, 'SW').expect(200);
-      const r1 = await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: blocked.id, acknowledgement: ack }).expect(409);
+      const r1 = await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: blocked.id, acknowledgement: ack, approval: SW_MANAGER }).expect(409);
       expect(r1.body.error).toBe('room_charge_blocked');
 
       const limited = await checkedInStay({ creditLimit: '5000.00' });
-      const r2 = await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: limited.id, acknowledgement: ack }).expect(409);
+      const r2 = await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: limited.id, acknowledgement: ack, approval: SW_MANAGER }).expect(409);
       expect(r2.body.error).toBe('credit_limit');
       // A stay that is not at this property is not found (BIL-17).
-      await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: randomUUID(), acknowledgement: ack }).expect(404);
+      await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: randomUUID(), acknowledgement: ack, approval: SW_MANAGER }).expect(404);
       await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/void`, { reason: 'Test check', approval: SW_MANAGER }).expect(200);
     });
 
@@ -604,9 +621,43 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
       await add('sw.waiter', c.id, [{ portionId: (await item('SW-KITCHEN', 'CF-CHAI', 'STD', 'SW')).portionId, quantity: '1' }], {}, 'SW').expect(200);
       const blocked = await api('sw.reception').post(`${SW}/stays/${stay.id}/check-out`, {}).expect(409);
       expect(blocked.body.error).toBe('open_pos_checks');
-      await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: stay.id, acknowledgement: ack }).expect(200);
+      await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: stay.id, acknowledgement: ack, approval: SW_MANAGER }).expect(200);
       const due = await api('sw.reception').post(`${SW}/stays/${stay.id}/check-out`, {}).expect(409);
       expect(due.body.error).toBe('balance_not_zero'); // now it is on the bill
+    });
+
+    it('a room charge needs a supervisor; one sent to the wrong room moves to the right one (Kahama demo, 25 Nov 2026)', async () => {
+      const wrong = await checkedInStay();
+      const right = await checkedInStay();
+      const c = await openCheck('sw.waiter', 'SW-MAINBAR', {}, 'SW');
+      await add('sw.waiter', c.id, [{ portionId: (await item('SW-MAINBAR', 'BR-TUSKER', 'STD', 'SW')).portionId, quantity: '2' }], {}, 'SW').expect(200);
+      const denied = await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: wrong.id, acknowledgement: ack }).expect(403);
+      expect(denied.body.error).toBe('approval_required');
+      const charged = await api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: wrong.id, acknowledgement: ack, approval: SW_MANAGER }).expect(200);
+      const amount = charged.body.roomCharge.amount as string;
+      const wrongBefore = (await api('sw.reception').get(`${SW}/folios/${wrong.folioId}`).expect(200)).body;
+
+      const move = (body: Record<string, unknown>) => api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge/move`, { acknowledgement: ack, ...body });
+      await move({ stayId: right.id }).expect(400); // a reason is required
+      await move({ stayId: right.id, reason: 'Wrong room number' }).expect(403);
+      expect((await move({ stayId: wrong.id, reason: 'Wrong room number', approval: SW_MANAGER }).expect(409)).body.error).toBe('same_stay');
+      const moved = await move({ stayId: right.id, reason: 'Wrong room number', approval: SW_MANAGER }).expect(200);
+      expect(moved.body).toMatchObject({ status: 'closed', stayId: right.id, roomCharge: { stayNumber: right.number, moves: 1 } });
+      expect(moved.body.roomCharge.folioChargeIds).toHaveLength(1);
+
+      // The wrong folio keeps its charge and gets a linked reversal; the right folio gets the charge.
+      const wrongAfter = (await api('sw.reception').get(`${SW}/folios/${wrong.folioId}`).expect(200)).body;
+      expect(Number(wrongBefore.balance.balance) - Number(wrongAfter.balance.balance)).toBeCloseTo(Number(amount), 2);
+      const rows = wrongAfter.charges.filter((ch: { posCheckId: string | null }) => ch.posCheckId === c.id);
+      expect(rows.map((ch: { amount: string }) => Number(ch.amount)).sort()).toEqual([-Number(amount), Number(amount)]);
+      const rightFolio = (await api('sw.reception').get(`${SW}/folios/${right.folioId}`).expect(200)).body;
+      const onRight = rightFolio.charges.filter((ch: { posCheckId: string | null }) => ch.posCheckId === c.id);
+      expect(onRight.reduce((a: number, ch: { amount: string }) => a + Number(ch.amount), 0)).toBeCloseTo(Number(amount), 2);
+      // It can move again (back), and a check never charged to a room cannot move.
+      await move({ stayId: wrong.id, reason: 'Guest was right after all', approval: SW_MANAGER }).expect(200);
+      const plain = await openCheck('sw.waiter', 'SW-MAINBAR', {}, 'SW');
+      expect((await api('sw.waiter').post(`${SWPOS}/checks/${plain.id}/room-charge/move`, { stayId: right.id, acknowledgement: ack, reason: 'Test', approval: SW_MANAGER }).expect(409)).body.error).toBe('no_room_charge');
+      await api('sw.waiter').post(`${SWPOS}/checks/${plain.id}/void`, { reason: 'Test check', approval: SW_MANAGER }).expect(200);
     });
 
     it('a room charge racing checkout lands on the settled bill or is refused (AT-09)', async () => {
@@ -615,7 +666,7 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
       await add('sw.waiter', c.id, [{ portionId: (await item('SW-MAINBAR', 'BR-TUSKER', 'STD', 'SW')).portionId, quantity: '1' }], {}, 'SW').expect(200);
       const nights = stay.nights.reduce((a, n) => a + Number(n.amount), 0).toFixed(2);
       const [charge, out] = await Promise.all([
-        api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: stay.id, acknowledgement: ack }),
+        api('sw.waiter').post(`${SWPOS}/checks/${c.id}/room-charge`, { stayId: stay.id, acknowledgement: ack, approval: SW_MANAGER }),
         api('sw.reception').post(`${SW}/stays/${stay.id}/check-out`, { tenders: [{ tender: 'cash', amount: nights }] }),
       ]);
       const folio = (await api('sw.reception').get(`${SW}/folios/${stay.folioId}`).expect(200)).body;
@@ -654,6 +705,67 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
   });
 
   // ---------------------------------------------------------------------------
+  describe('customer KRA PIN on the bill (POS demo 25 Nov, points 15 to 17)', () => {
+    it('puts the customer on the bill, saves them and finds them again by name, phone or PIN', async () => {
+      const check = await openCheck('k1.waiter', 'K1-COCKTAIL');
+      await add('k1.waiter', check.id, [{ portionId: (await item('K1-COCKTAIL', 'SD-SODA')).portionId, quantity: '1' }]).expect(200);
+      const first = await api('k1.waiter').post(`${POS}/checks/${check.id}/print`).expect(200);
+      expect(first.body.html).not.toContain('Customer');
+
+      const bad = await api('k1.waiter').post(`${POS}/checks/${check.id}/customer`, { name: 'Acme Traders', kraPin: '12345' }).expect(400);
+      expect(JSON.stringify(bad.body)).toContain('KRA PIN');
+
+      const set = await api('k1.waiter')
+        .post(`${POS}/checks/${check.id}/customer`, { name: 'Acme Traders Ltd', kraPin: 'p051234567q', phone: '0722 123456', save: true })
+        .expect(200);
+      expect(set.body.customer).toMatchObject({ name: 'Acme Traders Ltd', kraPin: 'P051234567Q', phone: '+254722123456' });
+      const customerId = set.body.customer.id;
+      expect(customerId).toBeTruthy();
+
+      // Adding the customer makes it an updated bill: no reprint approval.
+      const second = await api('k1.waiter').post(`${POS}/checks/${check.id}/print`).expect(200);
+      expect(second.body.changed).toBe(true);
+      expect(second.body.html).toContain('KRA PIN P051234567Q');
+      expect(second.body.html).toContain('Customer Acme Traders Ltd');
+
+      for (const q of ['acme', 'P05123', '0722123456', '722123']) {
+        const found = await api('k1.waiter').get(`${POS}/customers?q=${encodeURIComponent(q)}`).expect(200);
+        expect(found.body.map((c: { id: string }) => c.id)).toContain(customerId);
+      }
+      expect((await api('k1.waiter').get(`${POS}/customers?q=a`).expect(200)).body).toEqual([]);
+
+      // Saved customers are shared by the group: found at Kahama too, and picked by id.
+      const km = await api('km.waiter').get('/api/properties/KM/pos/customers?q=acme').expect(200);
+      expect(km.body[0].id).toBe(customerId);
+      const other = await openCheck('k1.waiter', 'K1-COCKTAIL');
+      const picked = await api('k1.waiter').post(`${POS}/checks/${other.id}/customer`, { customerId }).expect(200);
+      expect(picked.body.customer).toMatchObject({ id: customerId, kraPin: 'P051234567Q' });
+
+      // The same PIN saved again updates that customer rather than adding a second one.
+      const again = await api('k1.waiter')
+        .post(`${POS}/checks/${other.id}/customer`, { name: 'Acme Traders Limited', kraPin: 'P051234567Q', save: true })
+        .expect(200);
+      expect(again.body.customer.id).toBe(customerId);
+
+      // Details typed for this bill only are not saved.
+      const once = await api('k1.waiter').post(`${POS}/checks/${other.id}/customer`, { name: 'Walk-in Ltd', kraPin: 'A111111111B' }).expect(200);
+      expect(once.body.customer).toMatchObject({ id: null, name: 'Walk-in Ltd' });
+      expect((await api('k1.waiter').get(`${POS}/customers?q=A111111111B`).expect(200)).body).toEqual([]);
+
+      const cleared = await api('k1.waiter').post(`${POS}/checks/${other.id}/customer`, { clear: true }).expect(200);
+      expect(cleared.body.customer).toBeNull();
+      const events = await api('k1.waiter').get(`${POS}/checks/${other.id}/events`).expect(200);
+      expect(events.body.map((e: { event: string }) => e.event)).toEqual(expect.arrayContaining(['customer_set', 'customer_cleared']));
+
+      // Corrections to saved customers are for managers.
+      await api('k1.waiter').put(`${POS}/customers/${customerId}`, { phone: '+254733000111' }).expect(403);
+      const fixed = await api('k1.manager').put(`${POS}/customers/${customerId}`, { phone: '+254733000111' }).expect(200);
+      expect(fixed.body).toMatchObject({ name: 'Acme Traders Limited', phone: '+254733000111' });
+      // The bill already set keeps the details it had.
+      expect((await api('k1.waiter').get(`${POS}/checks/${check.id}`).expect(200)).body.customer.phone).toBe('+254722123456');
+    });
+  });
+
   describe('offline capture (OPS-05)', () => {
     it('keeps device-generated check and line ids; a replay is idempotent and a clash is refused', async () => {
       const id = randomUUID();
@@ -681,6 +793,26 @@ describe('Point of sale (POS, BIL-02/11/12, AT-02/03/07/09/10/13/14/18)', () => 
       await api('km.waiter').get('/api/properties/KM/pos/checks/' + c.id).expect(404);
       await api('km.waiter').post('/api/properties/KM/pos/outlets/K1-COCKTAIL/checks', { serviceType: 'counter' }).expect(404);
       await api('k1.waiter').post(`${POS}/checks/${c.id}/void`, { reason: 'Test check', approval: MANAGER }).expect(200);
+    });
+
+    it('at Kahama bars, counter sales and bar tabs are for the bar staff; waiters keep tables and takeaway (Kahama demo, 25 Nov 2026)', async () => {
+      const KMPOS = '/api/properties/KM/pos';
+      await api('owner').put(`${KMPOS}/outlets/KM-SHISHA/settings`, { liquorHours: ALL_DAY }).expect(200);
+      const refused = await api('km.waiter').post(`${KMPOS}/outlets/KM-SHISHA/checks`, { serviceType: 'counter', tabName: 'Brian' }).expect(409);
+      expect(refused.body.error).toBe('counter_staff_only');
+      const menu = (await api('km.waiter').get(`${KMPOS}/outlets/KM-SHISHA/menu`).expect(200)).body;
+      expect(menu.outlet.counterStaffOnly).toBe(true);
+      const tab = (await api('km.bartender').post(`${KMPOS}/outlets/KM-SHISHA/checks`, { serviceType: 'counter', tabName: 'Brian' }).expect(201)).body;
+      const takeaway = (await api('km.waiter').post(`${KMPOS}/outlets/KM-SHISHA/checks`, { serviceType: 'takeaway' }).expect(201)).body;
+      // Counter-only outlets (pool bar, shop) are not affected, and a manager can switch the rule off per outlet.
+      const pool = (await api('km.waiter').post(`${KMPOS}/outlets/KM-POOL/checks`, { serviceType: 'counter' }).expect(201)).body;
+      const changed = await api('km.manager').put(`${KMPOS}/outlets/KM-SHISHA/settings`, { counterStaffOnly: false }).expect(200);
+      expect(changed.body.counterStaffOnly).toBe(false);
+      const now = (await api('km.waiter').post(`${KMPOS}/outlets/KM-SHISHA/checks`, { serviceType: 'counter' }).expect(201)).body;
+      await api('km.manager').put(`${KMPOS}/outlets/KM-SHISHA/settings`, { counterStaffOnly: true }).expect(200);
+      for (const c of [tab, takeaway, pool, now]) {
+        await api('km.manager').post(`${KMPOS}/checks/${c.id}/void`, { reason: 'Test check' }).expect(200);
+      }
     });
   });
 

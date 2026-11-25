@@ -36,6 +36,7 @@ export const SEED_USERS: SeedUser[] = [
   { username: 'k1.kitchen', displayName: 'K1 kitchen', roles: ['kitchen'], properties: ['K1'] },
   { username: 'sw.waiter', displayName: 'Small World waiter', roles: ['waiter'], properties: ['SW'] },
   { username: 'km.waiter', displayName: 'Kahama waiter', roles: ['waiter'], properties: ['KM'] },
+  { username: 'km.bartender', displayName: 'Kahama barman', roles: ['bartender'], properties: ['KM'] },
   { username: 'sw.manager', displayName: 'Small World manager', roles: ['manager'], properties: ['SW'] },
   { username: 'km.manager', displayName: 'Kahama manager', roles: ['manager'], properties: ['KM'] },
 ];
